@@ -5,6 +5,7 @@ const {
   intOr,
   strOr,
   boolOr,
+  assertCallableAppCheck,
 } = require("./shared");
 const { requireAdmin } = require("./admin");
 
@@ -844,6 +845,8 @@ async function getOrBuildCachedPayload({
 exports.analyticsLoadSummary_v1 = functions
   .region(REGION)
   .https.onCall(async (data, context) => {
+    assertCallableAppCheck(context, "analyticsLoadSummary_v1");
+
     await requireAdmin(context);
 
     const forceRefresh = boolOr(data && data.forceRefresh, false);
@@ -859,6 +862,8 @@ exports.analyticsLoadSummary_v1 = functions
 exports.analyticsLoadTodaySummary_v1 = functions
   .region(REGION)
   .https.onCall(async (data, context) => {
+    assertCallableAppCheck(context, "analyticsLoadTodaySummary_v1");
+
     await requireAdmin(context);
 
     const forceRefresh = boolOr(data && data.forceRefresh, false);
@@ -874,6 +879,8 @@ exports.analyticsLoadTodaySummary_v1 = functions
 exports.analyticsLoadRetentionSummary_v1 = functions
   .region(REGION)
   .https.onCall(async (data, context) => {
+    assertCallableAppCheck(context, "analyticsLoadRetentionSummary_v1");
+
     await requireAdmin(context);
 
     const forceRefresh = boolOr(data && data.forceRefresh, false);
@@ -889,6 +896,8 @@ exports.analyticsLoadRetentionSummary_v1 = functions
 exports.analyticsLoadLast7DaysTimeseries_v1 = functions
   .region(REGION)
   .https.onCall(async (data, context) => {
+    assertCallableAppCheck(context, "analyticsLoadLast7DaysTimeseries_v1");
+
     await requireAdmin(context);
 
     const forceRefresh = boolOr(data && data.forceRefresh, false);
@@ -904,6 +913,8 @@ exports.analyticsLoadLast7DaysTimeseries_v1 = functions
 exports.analyticsLoadListenerLeaderboard_v1 = functions
   .region(REGION)
   .https.onCall(async (data, context) => {
+    assertCallableAppCheck(context, "analyticsLoadListenerLeaderboard_v1");
+
     await requireAdmin(context);
 
     const forceRefresh = boolOr(data && data.forceRefresh, false);
@@ -919,6 +930,8 @@ exports.analyticsLoadListenerLeaderboard_v1 = functions
 exports.analyticsRefreshCaches_v1 = functions
   .region(REGION)
   .https.onCall(async (_data, context) => {
+    assertCallableAppCheck(context, "analyticsRefreshCaches_v1");
+
     await requireAdmin(context);
 
     const [summary, today, last7days, retention, leaderboard] =
