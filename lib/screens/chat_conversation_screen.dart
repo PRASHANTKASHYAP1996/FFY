@@ -59,10 +59,12 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   String? _bootstrapErrorMessage;
   int _lastRenderedMessageCount = 0;
   String _lastSeenBatchSignature = '';
+  String _lastCommittedSeenBatchSignature = '';
   DateTime? _lastSeenBatchAt;
 
   static const int _messagesPageSize = 250;
   static const Duration _seenBatchThrottle = Duration(seconds: 2);
+  static const int _maxSeenUpdatesPerBatch = 25;
 
   DocumentReference<Map<String, dynamic>>? _resolvedSessionRef;
   String _resolvedSessionDocId = '';
@@ -467,14 +469,18 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
 
     if (unreadDocs.isEmpty) return;
 
-    final signature = unreadDocs.map((doc) => doc.id).join('|');
+    final cappedUnreadDocs = unreadDocs.length > _maxSeenUpdatesPerBatch
+        ? unreadDocs.take(_maxSeenUpdatesPerBatch).toList()
+        : unreadDocs;
+
+    final signature = cappedUnreadDocs.map((doc) => doc.id).join('|');
     final now = DateTime.now();
     final throttled =
         signature == _lastSeenBatchSignature &&
         _lastSeenBatchAt != null &&
         now.difference(_lastSeenBatchAt!) < _seenBatchThrottle;
 
-    if (throttled) {
+    if (throttled || signature == _lastCommittedSeenBatchSignature) {
       return;
     }
 
@@ -487,7 +493,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       final nowMs = DateTime.now().millisecondsSinceEpoch;
       final batch = _db.batch();
 
-      for (final doc in unreadDocs) {
+      for (final doc in cappedUnreadDocs) {
         batch.set(
           doc.reference,
           {
@@ -500,6 +506,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       }
 
       await batch.commit();
+      _lastCommittedSeenBatchSignature = signature;
     } catch (_) {
       // ignore
     } finally {
