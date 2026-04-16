@@ -9,6 +9,7 @@ const {
   intOr,
   strOr,
   boolOr,
+  assertCallableAppCheck,
   safeCurrency,
   getRazorpayClient,
   getRazorpayConfig,
@@ -38,47 +39,6 @@ function launchModeMeta({
     realMoneyEnabled: false,
     productionReady: false,
   };
-}
-
-const APP_CHECK_CALLABLE_MODE = (() => {
-  const configured = strOr(process.env.APP_CHECK_ENFORCE_CALLABLES, "off")
-    .trim()
-    .toLowerCase();
-  if (configured === "off" || configured === "monitor" || configured === "enforce") {
-    return configured;
-  }
-  console.warn(
-    `[appcheck] invalid APP_CHECK_ENFORCE_CALLABLES="${configured}", defaulting to "off"`
-  );
-  return "off";
-})();
-
-function appCheckEnforceEnabled() {
-  return APP_CHECK_CALLABLE_MODE === "enforce";
-}
-
-function appCheckMonitorEnabled() {
-  return APP_CHECK_CALLABLE_MODE === "monitor";
-}
-
-function assertCallableAppCheck(context, fnName) {
-  const appId = strOr(context && context.app && context.app.appId).trim();
-  if (appId) return;
-
-  if (appCheckMonitorEnabled()) {
-    const uid = strOr(context && context.auth && context.auth.uid).trim();
-    console.log(
-      `[appcheck-monitor] missing token on ${fnName} uid=${uid || "anonymous"}`
-    );
-    return;
-  }
-
-  if (appCheckEnforceEnabled()) {
-    throw new functions.https.HttpsError(
-      "failed-precondition",
-      "App Check token is required."
-    );
-  }
 }
 
 function assertTestOnlyTopup({

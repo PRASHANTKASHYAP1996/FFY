@@ -23,6 +23,9 @@ class CallRepository {
   final Set<String> _cancelingCallIds = <String>{};
   final Map<String, Future<String>> _pendingChatSessionEnsures =
       <String, Future<String>>{};
+  final Map<String, int> _recentlyEnsuredChatSessionsMs = <String, int>{};
+
+  static const int _chatSessionEnsureTtlMs = 45000;
 
   CollectionReference<Map<String, dynamic>> get _calls =>
       _db.collection(FirestorePaths.calls);
@@ -790,6 +793,24 @@ class CallRepository {
       return pending;
     }
 
+    final canonicalId = chatSessionIdForPair(
+      speakerId: safeSpeakerId,
+      listenerId: safeListenerId,
+    );
+    if (canonicalId.isNotEmpty) {
+      final ensuredAtMs = _recentlyEnsuredChatSessionsMs[canonicalId] ?? 0;
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      if (ensuredAtMs > 0 && nowMs - ensuredAtMs <= _chatSessionEnsureTtlMs) {
+        return canonicalId;
+      }
+
+      final existingSnap = await _chatSessions.doc(canonicalId).get();
+      if (existingSnap.exists) {
+        _recentlyEnsuredChatSessionsMs[canonicalId] = nowMs;
+        return canonicalId;
+      }
+    }
+
     final future = () async {
       final ensured = await _ensureChatSessionViaCallable(
         speakerId: safeSpeakerId,
@@ -797,7 +818,11 @@ class CallRepository {
       );
 
       final sessionId = _asString(ensured['sessionId']);
-      if (sessionId.isNotEmpty) return sessionId;
+      if (sessionId.isNotEmpty) {
+        _recentlyEnsuredChatSessionsMs[sessionId] =
+            DateTime.now().millisecondsSinceEpoch;
+        return sessionId;
+      }
 
       final fallbackId = chatSessionIdForPair(
         speakerId: safeSpeakerId,
@@ -806,7 +831,11 @@ class CallRepository {
       if (fallbackId.isEmpty) return '';
 
       final snap = await _chatSessions.doc(fallbackId).get();
-      return snap.exists ? fallbackId : '';
+      if (!snap.exists) return '';
+
+      _recentlyEnsuredChatSessionsMs[fallbackId] =
+          DateTime.now().millisecondsSinceEpoch;
+      return fallbackId;
     }();
 
     _pendingChatSessionEnsures[cacheKey] = future;
@@ -973,7 +1002,7 @@ class CallRepository {
       return;
     }
 
-    await ensureChatSessionByPair(
+    await _ensureSessionIfMissing(
       speakerId: safeSpeakerId,
       listenerId: safeListenerId,
     );
@@ -1001,7 +1030,7 @@ class CallRepository {
       return;
     }
 
-    await ensureChatSessionByPair(
+    await _ensureSessionIfMissing(
       speakerId: safeSpeakerId,
       listenerId: safeListenerId,
     );
@@ -1029,7 +1058,7 @@ class CallRepository {
       return;
     }
 
-    await ensureChatSessionByPair(
+    await _ensureSessionIfMissing(
       speakerId: safeSpeakerId,
       listenerId: safeListenerId,
     );
@@ -1064,7 +1093,7 @@ class CallRepository {
       );
     }
 
-    await ensureChatSessionByPair(
+    await _ensureSessionIfMissing(
       speakerId: safeSpeakerId,
       listenerId: safeListenerId,
     );
@@ -1081,6 +1110,22 @@ class CallRepository {
   bool isCallFinal(CallModel call) => call.isFinal;
 
   bool isCallLive(CallModel call) => call.isLiveCall;
+
+  Future<void> _ensureSessionIfMissing({
+    required String speakerId,
+    required String listenerId,
+  }) async {
+    final session = await getChatSessionByPair(
+      speakerId: speakerId,
+      listenerId: listenerId,
+    );
+    if (session['exists'] == true) return;
+
+    await ensureChatSessionByPair(
+      speakerId: speakerId,
+      listenerId: listenerId,
+    );
+  }
 
   bool amICaller(CallModel call) => call.callerId == myUid;
 
