@@ -41,6 +41,7 @@ const {
 } = require("./src/triggers");
 
 const {
+  requestAccountDeletion_v1,
   adminApproveWithdrawal_v1,
   adminRejectWithdrawal_v1,
   adminBlockUser_v1,
@@ -97,6 +98,7 @@ exports.onChatMessageCreated = onChatMessageCreated;
 exports.onChatMessageSeenUpdated = onChatMessageSeenUpdated;
 exports.cleanupCallRateLimits_v1 = cleanupCallRateLimits_v1;
 
+exports.requestAccountDeletion_v1 = requestAccountDeletion_v1;
 exports.adminApproveWithdrawal_v1 = adminApproveWithdrawal_v1;
 exports.adminRejectWithdrawal_v1 = adminRejectWithdrawal_v1;
 exports.adminBlockUser_v1 = adminBlockUser_v1;

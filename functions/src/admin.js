@@ -4,6 +4,7 @@ const {
   REGION,
   strOr,
   intOr,
+  assertCallableAppCheck,
   walletTxRef,
   createWalletTxDoc,
 } = require("./shared");
@@ -67,6 +68,8 @@ exports.requireAdmin = requireAdmin;
 exports.requestAccountDeletion_v1 = functions
   .region(REGION)
   .https.onCall(async (data, context) => {
+    assertCallableAppCheck(context, "requestAccountDeletion_v1");
+
     if (!context.auth) {
       throw new functions.https.HttpsError("unauthenticated", "Login required");
     }
@@ -103,7 +106,7 @@ exports.requestAccountDeletion_v1 = functions
     }
 
     if (!existingPendingSnap.empty) {
-      const existing = existingPendingSnap.docs.first;
+      const existing = existingPendingSnap.docs[0];
       return {
         ok: true,
         requestId: existing.id,
@@ -150,6 +153,8 @@ exports.requestAccountDeletion_v1 = functions
 exports.adminApproveWithdrawal_v1 = functions
   .region(REGION)
   .https.onCall(async (data, context) => {
+    assertCallableAppCheck(context, "adminApproveWithdrawal_v1");
+
     const adminMeta = await requireAdmin(context);
 
     const requestId = strOr(data && data.requestId).trim();
@@ -284,6 +289,8 @@ exports.adminApproveWithdrawal_v1 = functions
 exports.adminRejectWithdrawal_v1 = functions
   .region(REGION)
   .https.onCall(async (data, context) => {
+    assertCallableAppCheck(context, "adminRejectWithdrawal_v1");
+
     const adminMeta = await requireAdmin(context);
 
     const requestId = strOr(data && data.requestId).trim();
@@ -342,6 +349,8 @@ exports.adminRejectWithdrawal_v1 = functions
 exports.adminBlockUser_v1 = functions
   .region(REGION)
   .https.onCall(async (data, context) => {
+    assertCallableAppCheck(context, "adminBlockUser_v1");
+
     const adminMeta = await requireAdmin(context);
 
     const userId = strOr(data && data.userId).trim();
@@ -378,6 +387,8 @@ exports.adminBlockUser_v1 = functions
 exports.adminUnblockUser_v1 = functions
   .region(REGION)
   .https.onCall(async (data, context) => {
+    assertCallableAppCheck(context, "adminUnblockUser_v1");
+
     const adminMeta = await requireAdmin(context);
 
     const userId = strOr(data && data.userId).trim();

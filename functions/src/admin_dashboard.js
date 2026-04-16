@@ -1,4 +1,11 @@
-const { admin, functions, REGION, strOr, intOr } = require("./shared");
+const {
+  admin,
+  functions,
+  REGION,
+  strOr,
+  intOr,
+  assertCallableAppCheck,
+} = require("./shared");
 
 async function requireAdmin(context) {
   if (!context.auth) {
@@ -451,6 +458,8 @@ async function buildDashboardPayload(adminMeta) {
 }
 
 exports.adminGetDashboard_v1 = functions.region(REGION).https.onCall(async (data, context) => {
+  assertCallableAppCheck(context, "adminGetDashboard_v1");
+
   const adminMeta = await requireAdmin(context);
   const forceRefresh = data && data.forceRefresh === true;
 
@@ -469,6 +478,8 @@ exports.adminGetDashboard_v1 = functions.region(REGION).https.onCall(async (data
 exports.adminRefreshDashboardCache_v1 = functions
   .region(REGION)
   .https.onCall(async (_data, context) => {
+    assertCallableAppCheck(context, "adminRefreshDashboardCache_v1");
+
     const adminMeta = await requireAdmin(context);
     const payload = await buildDashboardPayload(adminMeta);
     await writeCache("dashboard_v1", payload);
