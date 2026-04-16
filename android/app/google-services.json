@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "481804518660",
+    "project_id": "friendify-ef682",
+    "storage_bucket": "friendify-ef682.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:481804518660:android:055d3acfbb3cc81f99fc51",
+        "android_client_info": {
+          "package_name": "com.example.friendify"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB3V8hhSI9lNNraAX_SvUkQF-cLaRRZFuc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
