@@ -41,6 +41,16 @@ function sanitizeListenerRateForFollowers(rate, _followersCount) {
   return allowed.includes(rate) ? rate : 5;
 }
 
+function shouldProjectUserPublicly(data) {
+  return !(
+    data.deleted === true ||
+    data.disabled === true ||
+    data.adminDeleted === true ||
+    data.adminBlocked === true ||
+    data.hiddenFromDiscovery === true
+  );
+}
+
 function levelFromFollowers(followersCount) {
   if (followersCount >= 100000) return 5;
   if (followersCount >= 10000) return 4;
@@ -64,8 +74,8 @@ function buildPublicUserProjection(userId, raw) {
     country: strOr(data.country),
     topics: stringArray(data.topics),
     languages: stringArray(data.languages),
-    isListener: true,
-    isAvailable: true,
+    isListener: boolOr(data.isListener, false),
+    isAvailable: boolOr(data.isAvailable, false),
     followersCount,
     level: intOr(data.level, levelFromFollowers(followersCount)),
     listenerRate: sanitizeListenerRateForFollowers(
@@ -76,6 +86,9 @@ function buildPublicUserProjection(userId, raw) {
     ratingCount: intOr(data.ratingCount, 0),
     ratingSum: Number(data.ratingSum || 0),
     activeCallId: strOr(data.activeCallId),
+    adminBlocked: boolOr(data.adminBlocked, false),
+    hiddenFromDiscovery: boolOr(data.hiddenFromDiscovery, false),
+    discoverable: boolOr(data.isListener, false) && !boolOr(data.adminBlocked, false) && !boolOr(data.hiddenFromDiscovery, false),
     createdAt: data.createdAt || null,
     lastSeen: data.lastSeen || null,
     lastPublicUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -93,9 +106,16 @@ async function main() {
   let written = 0;
 
   for (const doc of usersSnap.docs) {
-    const projection = buildPublicUserProjection(doc.id, doc.data() || {});
+    const data = doc.data() || {};
     const ref = db.collection("public_users").doc(doc.id);
 
+    if (!shouldProjectUserPublicly(data)) {
+      batch.delete(ref);
+      ops += 1;
+      continue;
+    }
+
+    const projection = buildPublicUserProjection(doc.id, data);
     batch.set(ref, projection, { merge: false });
     ops += 1;
     written += 1;

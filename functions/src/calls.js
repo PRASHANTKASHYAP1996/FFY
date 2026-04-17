@@ -190,6 +190,12 @@ async function ensureCanonicalChatSessionForPairTx({
       sessionId: pair.canonicalDocId,
       speakerId: pair.speakerId,
       listenerId: pair.listenerId,
+      pairUserA: pair.speakerId,
+      pairUserB: pair.listenerId,
+      requesterId: "",
+      responderId: "",
+      pendingFor: "",
+      actionOwner: "",
       status: "pending",
       callAllowed: false,
       callRequestedBy: "",
@@ -721,6 +727,10 @@ exports.speakerRequestChatAccess_v1 = functions
           status: nextStatus,
           callAllowed: false,
           callRequestedBy: speakerId,
+          requesterId: speakerId,
+          responderId: listenerId,
+          pendingFor: listenerId,
+          actionOwner: speakerId,
           callRequestOpen: true,
           callAllowedAt: null,
           callAllowedAtMs: 0,
@@ -936,7 +946,13 @@ exports.listenerRespondToChatRequest_v1 = functions
       update.status = nextStatus;
       update.callAllowed = nextCallAllowed;
       update.callRequestOpen = nextCallRequestOpen;
+      update.pendingFor = nextCallRequestOpen
+        ? (nextCallRequestedBy == speakerId ? listenerId : (nextCallRequestedBy == listenerId ? speakerId : ""))
+        : "";
       update.callRequestedBy = nextCallRequestedBy;
+      update.requesterId = nextCallRequestedBy;
+      update.responderId = nextCallRequestedBy == speakerId ? listenerId : (nextCallRequestedBy == listenerId ? speakerId : "");
+      update.actionOwner = listenerId;
       update.speakerBlocked = nextSpeakerBlocked;
       update.listenerBlocked = nextListenerBlocked;
       update.callRequestAtMs =
@@ -1610,6 +1626,10 @@ exports.startCall_v2 = functions
           callAllowed: false,
           callRequestOpen: false,
           callRequestedBy: "",
+          requesterId: "",
+          responderId: "",
+          pendingFor: "",
+          actionOwner: "",
           callAllowedAt: null,
           callAllowedAtMs: 0,
           callRequestAt: null,

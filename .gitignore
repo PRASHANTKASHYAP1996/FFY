@@ -56,6 +56,7 @@ ui-debug.log
 
 # local/sensitive cleanup
 functions/*.json
+!functions/package.json
 functions/.env
 android/local.properties
 android/.gradle/

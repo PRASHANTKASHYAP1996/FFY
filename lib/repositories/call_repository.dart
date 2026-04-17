@@ -155,6 +155,12 @@ class CallRepository {
       FirestorePaths.fieldChatSessionId: canonicalId,
       FirestorePaths.fieldSpeakerId: ids[0],
       FirestorePaths.fieldListenerId: ids[1],
+      FirestorePaths.fieldPairUserA: ids[0],
+      FirestorePaths.fieldPairUserB: ids[1],
+      FirestorePaths.fieldRequesterId: '',
+      FirestorePaths.fieldResponderId: '',
+      FirestorePaths.fieldPendingFor: '',
+      FirestorePaths.fieldActionOwner: '',
       FirestorePaths.fieldChatStatus: FirestorePaths.chatStatusNone,
       FirestorePaths.fieldCallAllowed: false,
       FirestorePaths.fieldCallRequestedBy: '',
@@ -209,6 +215,36 @@ class CallRepository {
     merged[FirestorePaths.fieldChatSessionId] = canonicalDocId;
     merged[FirestorePaths.fieldSpeakerId] = ids[0];
     merged[FirestorePaths.fieldListenerId] = ids[1];
+    merged[FirestorePaths.fieldPairUserA] = _asString(
+      data[FirestorePaths.fieldPairUserA],
+      fallback: ids[0],
+    );
+    merged[FirestorePaths.fieldPairUserB] = _asString(
+      data[FirestorePaths.fieldPairUserB],
+      fallback: ids[1],
+    );
+    final requestedBy = _asString(
+      data[FirestorePaths.fieldRequesterId],
+      fallback: _asString(data[FirestorePaths.fieldCallRequestedBy]),
+    );
+    final responderId = requestedBy == ids[0]
+        ? ids[1]
+        : requestedBy == ids[1]
+            ? ids[0]
+            : '';
+    merged[FirestorePaths.fieldRequesterId] = requestedBy;
+    merged[FirestorePaths.fieldResponderId] = _asString(
+      data[FirestorePaths.fieldResponderId],
+      fallback: responderId,
+    );
+    merged[FirestorePaths.fieldPendingFor] = _asString(
+      data[FirestorePaths.fieldPendingFor],
+      fallback: _asBool(data[FirestorePaths.fieldCallRequestOpen]) ? responderId : '',
+    );
+    merged[FirestorePaths.fieldActionOwner] = _asString(
+      data[FirestorePaths.fieldActionOwner],
+      fallback: '',
+    );
     merged[FirestorePaths.fieldChatStatus] = exists
         ? _asString(
             data[FirestorePaths.fieldChatStatus],

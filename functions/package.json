@@ -1,0 +1,25 @@
+{
+  "name": "friendify-functions",
+  "private": true,
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "scripts": {
+    "lint": "eslint .",
+    "check": "node -c index.js && node -c src/shared.js && node -c src/calls.js && node -c src/triggers.js && node -c src/payments.js && node -c src/admin.js && node -c src/admin_dashboard.js && node -c src/analytics.js",
+    "serve": "firebase emulators:start --only functions",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "agora-access-token": "^2.0.4",
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^5.1.1",
+    "razorpay": "^2.9.4"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.1",
+    "eslint-config-google": "^0.14.0"
+  }
+}
