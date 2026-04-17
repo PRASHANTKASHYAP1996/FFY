@@ -123,11 +123,21 @@ class UserRepository {
       ),
       FirestorePaths.fieldIsListener: _safeBool(
         data[FirestorePaths.fieldIsListener],
-        fallback: true,
+        fallback: false,
       ),
       FirestorePaths.fieldIsAvailable: _safeBool(
         data[FirestorePaths.fieldIsAvailable],
-        fallback: true,
+        fallback: false,
+      ),
+      FirestorePaths.fieldAdminBlocked: _safeBool(
+        data[FirestorePaths.fieldAdminBlocked],
+      ),
+      FirestorePaths.fieldHiddenFromDiscovery: _safeBool(
+        data[FirestorePaths.fieldHiddenFromDiscovery],
+      ),
+      FirestorePaths.fieldDiscoverable: _safeBool(
+        data[FirestorePaths.fieldDiscoverable],
+        fallback: _safeBool(data[FirestorePaths.fieldIsListener]),
       ),
       FirestorePaths.fieldFollowersCount: _safeInt(
         data[FirestorePaths.fieldFollowersCount],
@@ -373,16 +383,19 @@ class UserRepository {
   Stream<List<AppUserModel>> watchAvailableListeners({int limit = 200}) {
     final safeLimit = limit < 1 ? 1 : limit;
 
-    return _publicUsers.limit(safeLimit).snapshots().map((query) {
+    return _publicUsers
+        .where(FirestorePaths.fieldDiscoverable, isEqualTo: true)
+        .where(FirestorePaths.fieldIsListener, isEqualTo: true)
+        .orderBy(FirestorePaths.fieldRatingAvg, descending: true)
+        .limit(safeLimit)
+        .snapshots()
+        .map((query) {
       final out = <AppUserModel>[];
 
       for (final doc in query.docs) {
         final user = _safePublicUserFromMap(doc.data(), fallbackUid: doc.id);
         if (user == null) continue;
-        out.add(user.copyWith(
-          isListener: true,
-          isAvailable: true,
-        ));
+        out.add(user);
       }
 
       out.sort(_compareUsersForMarketplace);
@@ -403,7 +416,8 @@ class UserRepository {
     final safeLimit = limit < 1 ? 1 : limit;
 
     return _chatSessions
-        .where(FirestorePaths.fieldListenerId, isEqualTo: uid)
+        .where(FirestorePaths.fieldPendingFor, isEqualTo: uid)
+        .where(FirestorePaths.fieldCallRequestOpen, isEqualTo: true)
         .orderBy(FirestorePaths.fieldChatUpdatedAtMs, descending: true)
         .limit(safeLimit)
         .snapshots()
@@ -431,7 +445,8 @@ class UserRepository {
     final safeLimit = limit < 1 ? 1 : limit;
 
     final query = await _chatSessions
-        .where(FirestorePaths.fieldListenerId, isEqualTo: uid)
+        .where(FirestorePaths.fieldPendingFor, isEqualTo: uid)
+        .where(FirestorePaths.fieldCallRequestOpen, isEqualTo: true)
         .orderBy(FirestorePaths.fieldChatUpdatedAtMs, descending: true)
         .limit(safeLimit)
         .get();

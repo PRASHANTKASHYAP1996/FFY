@@ -170,8 +170,20 @@ function buildIncomingCallPushData(callId, callData) {
  * Backend-owned safe mirror of users/{uid} -> public_users/{uid}
  */
 
+function shouldProjectUserPublicly(data) {
+  return !(
+    data.deleted === true ||
+    data.disabled === true ||
+    data.adminDeleted === true ||
+    data.adminBlocked === true ||
+    data.hiddenFromDiscovery === true
+  );
+}
+
 function buildPublicUserProjection(userId, raw) {
   const data = raw || {};
+  const isListener = boolOr(data.isListener, false);
+  const isAvailable = boolOr(data.isAvailable, false);
 
   const visibleRate = sanitizeListenerRateForFollowers(
     intOr(data.listenerRate, 5),
@@ -189,8 +201,8 @@ function buildPublicUserProjection(userId, raw) {
     country: strOr(data.country),
     topics: stringArray(data.topics),
     languages: stringArray(data.languages),
-    isListener: true,
-    isAvailable: true,
+    isListener,
+    isAvailable,
     followersCount: intOr(data.followersCount, 0),
     level: intOr(data.level, levelFromFollowers(intOr(data.followersCount, 0))),
     listenerRate: visibleRate,
@@ -198,6 +210,9 @@ function buildPublicUserProjection(userId, raw) {
     ratingCount: intOr(data.ratingCount, 0),
     ratingSum: Number(data.ratingSum || 0),
     activeCallId: strOr(data.activeCallId),
+    adminBlocked: boolOr(data.adminBlocked, false),
+    hiddenFromDiscovery: boolOr(data.hiddenFromDiscovery, false),
+    discoverable: isListener && !boolOr(data.adminBlocked, false) && !boolOr(data.hiddenFromDiscovery, false),
     createdAt:
       data.createdAt instanceof Timestamp ||
       data.createdAt instanceof Date ||
@@ -229,6 +244,9 @@ function publicProjectionChanged(before, after) {
     "isListener",
     "isAvailable",
     "activeCallId",
+    "adminBlocked",
+    "hiddenFromDiscovery",
+    "discoverable",
     "followersCount",
     "level",
     "listenerRate",
@@ -275,7 +293,7 @@ async function syncPublicUserProjectionById(userId, userDataOrNull) {
 
   const publicRef = admin.firestore().collection("public_users").doc(safeUserId);
 
-  if (!userDataOrNull) {
+  if (!userDataOrNull || !shouldProjectUserPublicly(userDataOrNull)) {
     await publicRef.delete().catch(() => null);
     return null;
   }
@@ -355,10 +373,7 @@ exports.backfillPublicUsers_v1 = functions
 
       if (!userId) continue;
 
-      const shouldDelete =
-        data.deleted === true ||
-        data.disabled === true ||
-        data.adminDeleted === true;
+      const shouldDelete = !shouldProjectUserPublicly(data);
 
       if (shouldDelete) {
         await admin
@@ -389,35 +404,130 @@ exports.syncFollowersCount_v2 = functions
     const before = change.before.data() || {};
     const after = change.after.data() || {};
     const userId = strOr(context.params.userId).trim();
-
     if (!userId) return null;
 
-    const beforeFollowers = Array.isArray(before.following) ? before.following : [];
-    const afterFollowers = Array.isArray(after.following) ? after.following : [];
+    const beforeFollowing = new Set(stringArray(before.following));
+    const afterFollowing = new Set(stringArray(after.following));
 
-    const beforeCount = beforeFollowers.length;
-    const afterCount = afterFollowers.length;
+    const added = [...afterFollowing].filter((id) => !beforeFollowing.has(id));
+    const removed = [...beforeFollowing].filter((id) => !afterFollowing.has(id));
 
-    if (beforeCount === afterCount) return null;
+    if (added.length === 0 && removed.length === 0) return null;
 
-    const userRef = admin.firestore().collection("users").doc(userId);
-    const level = levelFromFollowers(afterCount);
-    const listenerRate = sanitizeListenerRateForFollowers(
-      intOr(after.listenerRate, 5),
-      afterCount
-    );
+    const followersRoot = admin.firestore().collection("user_followers");
+    const batch = admin.firestore().batch();
 
-    await userRef.set(
-      {
-        followersCount: afterCount,
-        level,
-        listenerRate,
-        lastSeen: admin.firestore.FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
+    for (const targetIdRaw of added) {
+      const targetId = strOr(targetIdRaw).trim();
+      if (!targetId || targetId === userId) continue;
+      batch.set(
+        followersRoot.doc(targetId).collection("followers").doc(userId),
+        {
+          followerId: userId,
+          targetUserId: targetId,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+
+    for (const targetIdRaw of removed) {
+      const targetId = strOr(targetIdRaw).trim();
+      if (!targetId || targetId === userId) continue;
+      batch.delete(followersRoot.doc(targetId).collection("followers").doc(userId));
+    }
+
+    await batch.commit();
+
+    const touchedUsers = new Set([...added, ...removed].map((id) => strOr(id).trim()).filter(Boolean));
+
+    for (const targetId of touchedUsers) {
+      if (!targetId || targetId === userId) continue;
+      const targetRef = admin.firestore().collection("users").doc(targetId);
+      const countSnapshot = await followersRoot.doc(targetId).collection("followers").count().get();
+      const followerCount = intOr(countSnapshot.data().count, 0);
+
+      await admin.firestore().runTransaction(async (tx) => {
+        const targetSnap = await tx.get(targetRef);
+        if (!targetSnap.exists) return;
+        const target = targetSnap.data() || {};
+        const level = levelFromFollowers(followerCount);
+        const listenerRate = sanitizeListenerRateForFollowers(
+          intOr(target.listenerRate, 5),
+          followerCount
+        );
+
+        tx.set(
+          targetRef,
+          {
+            followersCount: followerCount,
+            level,
+            listenerRate,
+            lastSeen: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      });
+    }
 
     return null;
+  });
+
+exports.backfillFollowersCount_v1 = functions
+  .region(REGION)
+  .https.onCall(async (_data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError("unauthenticated", "Login required");
+    }
+
+    const token = context.auth.token || {};
+    const isAdmin =
+      token.admin === true ||
+      token.isAdmin === true ||
+      strOr(token.role).toLowerCase() === "admin";
+
+    if (!isAdmin) {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "Admin access required"
+      );
+    }
+
+    const usersSnap = await admin.firestore().collection("users").get();
+    const followersRoot = admin.firestore().collection("user_followers");
+    let processed = 0;
+
+    for (const userDoc of usersSnap.docs) {
+      const targetId = strOr(userDoc.id).trim();
+      if (!targetId) continue;
+
+      const countSnapshot = await followersRoot
+        .doc(targetId)
+        .collection("followers")
+        .count()
+        .get();
+      const followerCount = intOr(countSnapshot.data().count, 0);
+      const user = userDoc.data() || {};
+      const level = levelFromFollowers(followerCount);
+      const listenerRate = sanitizeListenerRateForFollowers(
+        intOr(user.listenerRate, 5),
+        followerCount
+      );
+
+      await userDoc.ref.set(
+        {
+          followersCount: followerCount,
+          level,
+          listenerRate,
+          lastSeen: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      processed += 1;
+    }
+
+    return { ok: true, processed };
   });
 
 exports.aggregateReviewToUser_v2 = functions

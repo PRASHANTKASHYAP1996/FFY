@@ -74,6 +74,9 @@ class FirestorePaths {
 
   static const String fieldIsListener = 'isListener';
   static const String fieldIsAvailable = 'isAvailable';
+  static const String fieldAdminBlocked = 'adminBlocked';
+  static const String fieldHiddenFromDiscovery = 'hiddenFromDiscovery';
+  static const String fieldDiscoverable = 'discoverable';
 
   static const String fieldFollowersCount = 'followersCount';
   static const String fieldLevel = 'level';
@@ -196,6 +199,12 @@ class FirestorePaths {
 
   static const String fieldSpeakerId = 'speakerId';
   static const String fieldListenerId = 'listenerId';
+  static const String fieldPairUserA = 'pairUserA';
+  static const String fieldPairUserB = 'pairUserB';
+  static const String fieldRequesterId = 'requesterId';
+  static const String fieldResponderId = 'responderId';
+  static const String fieldPendingFor = 'pendingFor';
+  static const String fieldActionOwner = 'actionOwner';
 
   static const String fieldChatCreatedAt = 'createdAt';
   static const String fieldChatUpdatedAt = 'updatedAt';

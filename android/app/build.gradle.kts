@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("com.google.gms.google-services")
@@ -5,13 +7,32 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+
+val localProperties = Properties().apply {
+    val localFile = rootProject.file("local.properties")
+    if (localFile.exists()) {
+        localFile.inputStream().use { load(it) }
+    }
+}
+
+val appId = providers.gradleProperty("FRIENDIFY_APP_ID")
+    .orElse(localProperties.getProperty("friendify.appId") ?: "com.friendify.app")
+    .get()
+
+val keystoreProperties = Properties().apply {
+    val keystoreFile = rootProject.file("key.properties")
+    if (keystoreFile.exists()) {
+        keystoreFile.inputStream().use { load(it) }
+    }
+}
+
 android {
-    namespace = "com.example.friendify"
+    namespace = appId
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
     defaultConfig {
-        applicationId = "com.example.friendify"
+        applicationId = appId
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -46,7 +67,18 @@ android {
         }
 
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (keystoreProperties.isNotEmpty()) {
+                signingConfigs.create("release") {
+                    keyAlias = keystoreProperties.getProperty("keyAlias")
+                    keyPassword = keystoreProperties.getProperty("keyPassword")
+                    storeFile = file(keystoreProperties.getProperty("storeFile"))
+                    storePassword = keystoreProperties.getProperty("storePassword")
+                }
+            } else {
+                null
+            }
+            isMinifyEnabled = true
+            isShrinkResources = true
             ndk {
                 debugSymbolLevel = "FULL"
             }
