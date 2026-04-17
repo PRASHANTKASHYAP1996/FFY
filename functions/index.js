@@ -30,6 +30,7 @@ const {
 
 const {
   syncFollowersCount_v2,
+  backfillFollowersCount_v1,
   syncPublicUserProjection_v1,
   backfillPublicUsers_v1,
   notifyIncomingCall,
@@ -89,6 +90,7 @@ exports.requestWithdrawal_v1 = requestWithdrawal_v1;
 exports.cancelMyWithdrawal_v1 = cancelMyWithdrawal_v1;
 
 exports.syncFollowersCount_v2 = syncFollowersCount_v2;
+exports.backfillFollowersCount_v1 = backfillFollowersCount_v1;
 exports.syncPublicUserProjection_v1 = syncPublicUserProjection_v1;
 exports.backfillPublicUsers_v1 = backfillPublicUsers_v1;
 exports.notifyIncomingCall = notifyIncomingCall;

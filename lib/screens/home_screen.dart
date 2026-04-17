@@ -183,15 +183,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   String _requestSpeakerId(Map<String, dynamic> request) {
-    return (request[FirestorePaths.fieldSpeakerId] ?? request['speakerId'] ?? '')
+    return (request[FirestorePaths.fieldRequesterId] ?? request['requesterId'] ?? request[FirestorePaths.fieldCallRequestedBy] ?? request[FirestorePaths.fieldSpeakerId] ?? request['speakerId'] ?? '')
         .toString()
         .trim();
   }
 
   String _requestListenerId(Map<String, dynamic> request) {
-    return (request[FirestorePaths.fieldListenerId] ??
-            request['listenerId'] ??
-            '')
+    return (request[FirestorePaths.fieldResponderId] ?? request['responderId'] ?? request[FirestorePaths.fieldPendingFor] ?? request['pendingFor'] ?? request[FirestorePaths.fieldListenerId] ?? request['listenerId'] ?? '')
         .toString()
         .trim();
   }
@@ -1123,7 +1121,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     final listenerQuery = _db
         .collection(FirestorePaths.chatSessions)
-        .where(FirestorePaths.fieldListenerId, isEqualTo: me.uid)
+        .where(FirestorePaths.fieldPendingFor, isEqualTo: me.uid)
+        .where(FirestorePaths.fieldCallRequestOpen, isEqualTo: true)
         .limit(100);
 
     return _sectionCard(

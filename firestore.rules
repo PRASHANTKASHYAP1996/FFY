@@ -130,9 +130,13 @@ service cloud.firestore {
         && request.resource.data.email is string
         && request.resource.data.displayName is string
         && request.resource.data.credits is int
+        && request.resource.data.credits == 500
         && request.resource.data.reservedCredits is int
+        && request.resource.data.reservedCredits == 0
         && request.resource.data.earningsCredits is int
+        && request.resource.data.earningsCredits == 0
         && request.resource.data.platformRevenueCredits is int
+        && request.resource.data.platformRevenueCredits == 0
         && request.resource.data.photoURL is string
         && request.resource.data.bio is string
         && request.resource.data.gender is string
@@ -144,7 +148,9 @@ service cloud.firestore {
         && request.resource.data.isListener is bool
         && request.resource.data.isAvailable is bool
         && request.resource.data.followersCount is int
+        && request.resource.data.followersCount == 0
         && request.resource.data.level is int
+        && request.resource.data.level == 1
         && request.resource.data.listenerRate is int
         && validRate(request.resource.data.listenerRate)
         && request.resource.data.following is list
@@ -153,8 +159,17 @@ service cloud.firestore {
         && request.resource.data.favoriteListeners is list
         && request.resource.data.activeCallId is string
         && request.resource.data.ratingAvg is number
+        && request.resource.data.ratingAvg == 0
         && request.resource.data.ratingCount is int
-        && request.resource.data.ratingSum is int;
+        && request.resource.data.ratingCount == 0
+        && request.resource.data.ratingSum is int
+        && request.resource.data.ratingSum == 0
+        && request.resource.data.topics.size() <= 20
+        && request.resource.data.languages.size() <= 20
+        && request.resource.data.following.size() <= 2000
+        && request.resource.data.blocked.size() <= 2000
+        && request.resource.data.fcmTokens.size() <= 20
+        && request.resource.data.favoriteListeners.size() <= 500;
     }
 
     function isAllowedSelfUserUpdate() {
@@ -193,7 +208,22 @@ service cloud.firestore {
         && validStringList("following")
         && validStringList("blocked")
         && validStringList("fcmTokens")
-        && validStringList("favoriteListeners");
+        && validStringList("favoriteListeners")
+        && request.resource.data.credits == resource.data.credits
+        && request.resource.data.reservedCredits == resource.data.reservedCredits
+        && request.resource.data.earningsCredits == resource.data.earningsCredits
+        && request.resource.data.platformRevenueCredits == resource.data.platformRevenueCredits
+        && request.resource.data.followersCount == resource.data.followersCount
+        && request.resource.data.level == resource.data.level
+        && request.resource.data.ratingAvg == resource.data.ratingAvg
+        && request.resource.data.ratingCount == resource.data.ratingCount
+        && request.resource.data.ratingSum == resource.data.ratingSum
+        && request.resource.data.topics.size() <= 20
+        && request.resource.data.languages.size() <= 20
+        && request.resource.data.following.size() <= 2000
+        && request.resource.data.blocked.size() <= 2000
+        && request.resource.data.fcmTokens.size() <= 20
+        && request.resource.data.favoriteListeners.size() <= 500;
     }
 
     function validPublicUserKeys(data) {
@@ -206,6 +236,9 @@ service cloud.firestore {
         "languages",
         "isListener",
         "isAvailable",
+        "adminBlocked",
+        "hiddenFromDiscovery",
+        "discoverable",
         "followersCount",
         "level",
         "listenerRate",
@@ -228,6 +261,9 @@ service cloud.firestore {
         && data.languages is list
         && data.isListener is bool
         && data.isAvailable is bool
+        && (!("adminBlocked" in data) || data.adminBlocked is bool)
+        && (!("hiddenFromDiscovery" in data) || data.hiddenFromDiscovery is bool)
+        && (!("discoverable" in data) || data.discoverable is bool)
         && data.followersCount is int
         && data.level is int
         && data.listenerRate is int
@@ -480,6 +516,11 @@ service cloud.firestore {
 
     match /wallet_locks/{lockId} {
       allow read, write: if false;
+    }
+
+    match /user_followers/{userId}/followers/{followerId} {
+      allow read: if signedIn() && (uid() == userId || uid() == followerId || isAdmin());
+      allow create, update, delete: if false;
     }
 
     match /admin_logs/{logId} {

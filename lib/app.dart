@@ -41,7 +41,7 @@ class FriendifyApp extends StatelessWidget {
         final media = MediaQuery.of(context);
         final clampedTextScaler = media.textScaler.clamp(
           minScaleFactor: 0.9,
-          maxScaleFactor: 1.15,
+          maxScaleFactor: 1.4,
         );
 
         return MediaQuery(

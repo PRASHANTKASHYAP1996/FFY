@@ -54,16 +54,16 @@ function boolOr(val, fallback = false) {
 }
 
 const APP_CHECK_CALLABLE_MODE = (() => {
-  const configured = strOr(process.env.APP_CHECK_ENFORCE_CALLABLES, "off")
+  const configured = strOr(process.env.APP_CHECK_ENFORCE_CALLABLES, "enforce")
     .trim()
     .toLowerCase();
   if (configured === "off" || configured === "monitor" || configured === "enforce") {
     return configured;
   }
   console.warn(
-    `[appcheck] invalid APP_CHECK_ENFORCE_CALLABLES="${configured}", defaulting to "off"`
+    `[appcheck] invalid APP_CHECK_ENFORCE_CALLABLES="${configured}", defaulting to "enforce"`
   );
-  return "off";
+  return "enforce";
 })();
 
 function appCheckEnforceEnabled() {
@@ -163,32 +163,14 @@ function getAgoraConfig() {
   const envAppId = strOr(process.env.AGORA_APP_ID);
   const envAppCertificate = strOr(process.env.AGORA_APP_CERTIFICATE);
 
-  if (envAppId && envAppCertificate) {
-    return { appId: envAppId, appCertificate: envAppCertificate };
-  }
-
-  const cfg = (functions.config && functions.config()) || {};
-  const appId = cfg.agora && cfg.agora.app_id ? String(cfg.agora.app_id) : "";
-  const appCertificate =
-    cfg.agora && cfg.agora.app_certificate ? String(cfg.agora.app_certificate) : "";
-
-  return { appId, appCertificate };
+  return { appId: envAppId, appCertificate: envAppCertificate };
 }
 
 function getRazorpayConfig() {
   const envKeyId = strOr(process.env.RAZORPAY_KEY_ID);
   const envKeySecret = strOr(process.env.RAZORPAY_KEY_SECRET);
 
-  if (envKeyId && envKeySecret) {
-    return { keyId: envKeyId, keySecret: envKeySecret };
-  }
-
-  const cfg = (functions.config && functions.config()) || {};
-  const keyId = cfg.razorpay && cfg.razorpay.key_id ? String(cfg.razorpay.key_id) : "";
-  const keySecret =
-    cfg.razorpay && cfg.razorpay.key_secret ? String(cfg.razorpay.key_secret) : "";
-
-  return { keyId, keySecret };
+  return { keyId: envKeyId, keySecret: envKeySecret };
 }
 
 function getRazorpayClient() {
