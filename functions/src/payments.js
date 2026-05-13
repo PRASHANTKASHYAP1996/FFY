@@ -1,4 +1,4 @@
-const {
+﻿const {
   admin,
   functions,
   REGION,
@@ -20,7 +20,14 @@ const {
   createWalletTxDoc,
   createPaymentOrderDoc,
   acquireExecutionLock,
+  shortLogId,
+  logEvent,
+  logError,
 } = require("./shared");
+const {
+  computeWithdrawalUsableBalance,
+  releaseWithdrawalHoldBalance,
+} = require("./withdrawals");
 
 function launchModeMeta({
   gateway = "",
@@ -41,6 +48,46 @@ function launchModeMeta({
   };
 }
 
+function planCancelledWithdrawalHoldRepair({
+  request = {},
+  user = {},
+  requestId = "",
+}) {
+  const status = strOr(request.status, "pending").toLowerCase();
+  const holdStatus = strOr(request.holdStatus).toLowerCase();
+  const userId = strOr(request.userId).trim();
+  const heldCredits = intOr(request.heldCredits, 0);
+
+  if (status !== "cancelled" || heldCredits <= 0 || holdStatus === "released") {
+    return { kind: "noop" };
+  }
+
+  if (!userId) {
+    return {
+      kind: "error",
+      code: "failed-precondition",
+      message: "Cancelled withdrawal hold cannot be repaired: user missing",
+    };
+  }
+
+  const pendingWithdrawalCredits = intOr(user.pendingWithdrawalCredits, 0);
+
+  return {
+    kind: "repair",
+    userId,
+    requestId: strOr(requestId).trim(),
+    heldCredits,
+    newPendingWithdrawalCredits: releaseWithdrawalHoldBalance({
+      currentPendingWithdrawalCredits: pendingWithdrawalCredits,
+      heldCredits,
+    }),
+    cancelledBy: strOr(request.cancelledBy),
+    cancelledAtMs: intOr(request.cancelledAtMs, 0),
+  };
+}
+
+exports._planCancelledWithdrawalHoldRepair = planCancelledWithdrawalHoldRepair;
+
 function assertTestOnlyTopup({
   amount,
   currency,
@@ -50,21 +97,21 @@ function assertTestOnlyTopup({
   if (amount < MIN_TOPUP_AMOUNT) {
     throw new functions.https.HttpsError(
       "invalid-argument",
-      `Minimum top-up is ₹${MIN_TOPUP_AMOUNT}`
+      `Minimum top-up is Rs ${MIN_TOPUP_AMOUNT}`
     );
   }
 
   if (amount > MAX_TOPUP_AMOUNT) {
     throw new functions.https.HttpsError(
       "invalid-argument",
-      `Maximum top-up is ₹${MAX_TOPUP_AMOUNT}`
+      `Maximum top-up is Rs ${MAX_TOPUP_AMOUNT}`
     );
   }
 
   if (currency !== "INR") {
     throw new functions.https.HttpsError(
       "invalid-argument",
-      "Only INR is supported in the current build"
+      "Only INR is supported."
     );
   }
 
@@ -78,10 +125,229 @@ function assertTestOnlyTopup({
   if (requestRealMoney) {
     throw new functions.https.HttpsError(
       "failed-precondition",
-      "Real money mode is disabled in this build. Use test/sandbox mode only."
+      "Real-money top-ups are not available in this build."
     );
   }
 }
+
+function sandboxTopupFlagEnabled() {
+  return strOr(process.env.ENABLE_SANDBOX_TOPUP, "")
+    .trim()
+    .toLowerCase() === "true";
+}
+
+function currentProjectId() {
+  return strOr(
+    process.env.GCLOUD_PROJECT ||
+      process.env.GCP_PROJECT ||
+      (admin.app().options && admin.app().options.projectId),
+    ""
+  ).trim();
+}
+
+function sandboxTopupProjectAllowed(projectId = currentProjectId()) {
+  const safeProjectId = strOr(projectId, "").trim().toLowerCase();
+  return process.env.FUNCTIONS_EMULATOR === "true" ||
+    safeProjectId.includes("dev") ||
+    safeProjectId.includes("test") ||
+    safeProjectId.includes("emulator");
+}
+
+function assertSandboxTopupEnabled({ projectId, enabled } = {}) {
+  const flagEnabled = typeof enabled === "boolean" ? enabled : sandboxTopupFlagEnabled();
+  const safeProjectId = strOr(projectId, currentProjectId()).trim();
+
+  if (!flagEnabled || !sandboxTopupProjectAllowed(safeProjectId)) {
+    throw new functions.https.HttpsError(
+      "permission-denied",
+      "Sandbox top-up is disabled."
+    );
+  }
+}
+
+exports._sandboxTopupFlagEnabled = sandboxTopupFlagEnabled;
+exports._sandboxTopupProjectAllowed = sandboxTopupProjectAllowed;
+exports._assertSandboxTopupEnabled = assertSandboxTopupEnabled;
+
+function payoutSnapshotString(raw, key, maxLength) {
+  if (!raw || !(key in raw) || raw[key] === null || raw[key] === undefined) {
+    return "";
+  }
+  const value = raw[key];
+  if (typeof value !== "string" && typeof value !== "number") {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Payout account details contain an invalid field."
+    );
+  }
+  return String(value).trim().slice(0, maxLength);
+}
+
+function sanitizePayoutAccountSnapshot(raw) {
+  if (raw === null || raw === undefined) return {};
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Payout account details must be an object."
+    );
+  }
+
+  const out = {};
+  const payoutMethod = payoutSnapshotString(raw, "payoutMethod", 32).toLowerCase();
+  if (["upi", "bank", "manual_support"].includes(payoutMethod)) {
+    out.payoutMethod = payoutMethod;
+  }
+
+  const accountHolderName = payoutSnapshotString(raw, "accountHolderName", 80);
+  if (accountHolderName) out.accountHolderName = accountHolderName;
+
+  const upiId = payoutSnapshotString(raw, "upiId", 80);
+  if (upiId) out.upiId = upiId;
+
+  const bankName = payoutSnapshotString(raw, "bankName", 80);
+  if (bankName) out.bankName = bankName;
+
+  const accountType = payoutSnapshotString(raw, "accountType", 32);
+  if (accountType) out.accountType = accountType;
+
+  const ifsc = payoutSnapshotString(raw, "ifsc", 20)
+    .replace(/\s+/g, "")
+    .toUpperCase();
+  if (ifsc) out.ifsc = ifsc;
+
+  const maskedAccountNumber = payoutSnapshotString(raw, "maskedAccountNumber", 40);
+  const rawAccountNumber = payoutSnapshotString(raw, "accountNumber", 40)
+    .replace(/\D/g, "");
+  if (maskedAccountNumber) {
+    out.maskedAccountNumber = maskedAccountNumber;
+  } else if (rawAccountNumber) {
+    out.maskedAccountNumber = `****${rawAccountNumber.slice(-4)}`;
+  }
+
+  return out;
+}
+
+exports._sanitizePayoutAccountSnapshot = sanitizePayoutAccountSnapshot;
+
+function hasUsablePayoutAccountSnapshot(snapshot = {}) {
+  const payoutMethod = strOr(snapshot.payoutMethod).toLowerCase();
+  if (payoutMethod === "upi") {
+    return /^[^\s@]+@[^\s@]+$/.test(strOr(snapshot.upiId));
+  }
+  if (payoutMethod === "bank") {
+    return Boolean(
+      strOr(snapshot.accountHolderName) &&
+      strOr(snapshot.ifsc) &&
+      strOr(snapshot.maskedAccountNumber)
+    );
+  }
+  return false;
+}
+
+exports._hasUsablePayoutAccountSnapshot = hasUsablePayoutAccountSnapshot;
+
+function validateRazorpayPaymentRecord({
+  payment = {},
+  expectedOrderId = "",
+  expectedAmountPaise = 0,
+  expectedCurrency = "INR",
+}) {
+  const paymentOrderId = strOr(payment.order_id).trim();
+  const paymentStatus = strOr(payment.status).trim().toLowerCase();
+  const paymentAmount = intOr(payment.amount, 0);
+  const paymentCurrency = strOr(payment.currency, "INR").trim().toUpperCase();
+  const safeExpectedOrderId = strOr(expectedOrderId).trim();
+  const safeExpectedCurrency = safeCurrency(expectedCurrency);
+  const safeExpectedAmountPaise = Math.max(0, intOr(expectedAmountPaise, 0));
+
+  if (!paymentOrderId || paymentOrderId !== safeExpectedOrderId) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Razorpay payment does not belong to this order."
+    );
+  }
+
+  if (paymentAmount !== safeExpectedAmountPaise) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Razorpay payment amount does not match the order."
+    );
+  }
+
+  if (paymentCurrency !== safeExpectedCurrency) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Razorpay payment currency does not match the order."
+    );
+  }
+
+  if (paymentStatus !== "captured" && payment.captured !== true) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Razorpay payment is not captured."
+    );
+  }
+
+  return {
+    orderId: paymentOrderId,
+    amount: paymentAmount,
+    currency: paymentCurrency,
+    status: paymentStatus || (payment.captured === true ? "captured" : ""),
+  };
+}
+
+async function assertRazorpayPaymentVerifiedByGateway({
+  paymentId,
+  razorpayOrderId,
+  amount,
+  currency,
+}) {
+  const { keyId } = getRazorpayConfig();
+  const razorpay = getRazorpayClient();
+  let payment;
+  try {
+    payment = await razorpay.payments.fetch(paymentId);
+  } catch (e) {
+    console.log("verifyRazorpayPayment_v1 payment fetch error:", e);
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Unable to verify Razorpay payment status."
+    );
+  }
+
+  return validateRazorpayPaymentRecord({
+    payment,
+    expectedOrderId: razorpayOrderId,
+    expectedAmountPaise: amount * 100,
+    expectedCurrency: currency,
+  });
+}
+
+exports._validateRazorpayPaymentRecord = validateRazorpayPaymentRecord;
+
+function buildRazorpayOrderResponse({
+  orderId,
+  keyId,
+  gatewayOrderId,
+  amount,
+  currency,
+}) {
+  return {
+    ok: true,
+    orderId,
+    keyId,
+    razorpayOrderId: gatewayOrderId,
+    gatewayOrderId,
+    amount,
+    currency,
+    gateway: "razorpay",
+    status: "pending",
+    testMode: true,
+    ...launchModeMeta({ gateway: "razorpay" }),
+  };
+}
+
+exports._buildRazorpayOrderResponse = buildRazorpayOrderResponse;
 
 function assertTestOnlyWithdrawal({
   amount,
@@ -91,21 +357,21 @@ function assertTestOnlyWithdrawal({
   if (amount < MIN_WITHDRAWAL_AMOUNT) {
     throw new functions.https.HttpsError(
       "invalid-argument",
-      `Minimum withdrawal is ₹${MIN_WITHDRAWAL_AMOUNT}`
+      `Minimum withdrawal is Rs ${MIN_WITHDRAWAL_AMOUNT}`
     );
   }
 
   if (amount > MAX_WITHDRAWAL_AMOUNT) {
     throw new functions.https.HttpsError(
       "invalid-argument",
-      `Maximum withdrawal is ₹${MAX_WITHDRAWAL_AMOUNT}`
+      `Maximum withdrawal is Rs ${MAX_WITHDRAWAL_AMOUNT}`
     );
   }
 
   if (realMoneyEnabled) {
     throw new functions.https.HttpsError(
       "failed-precondition",
-      "Real money payouts are disabled in this build."
+      "Real-money payouts are not available in this build."
     );
   }
 
@@ -113,7 +379,7 @@ function assertTestOnlyWithdrawal({
   if (safePayoutMode !== "manual_test") {
     throw new functions.https.HttpsError(
       "failed-precondition",
-      "Only manual_test payout mode is allowed in this build."
+      "Withdrawal payouts are not available in this build."
     );
   }
 }
@@ -131,6 +397,13 @@ exports.createTopupOrder_v1 = functions.region(REGION).https.onCall(async (data,
   const gateway = strOr(data && data.gateway, "sandbox").trim().toLowerCase();
   const metadata = data && typeof data.metadata === "object" && data.metadata ? data.metadata : {};
   const requestRealMoney = boolOr(data && data.enableRealMoney, false);
+
+  logEvent("payment.order.create.request", {
+    userId: shortLogId(userId),
+    gateway,
+    amount,
+    currency,
+  });
 
   assertTestOnlyTopup({
     amount,
@@ -172,6 +445,15 @@ exports.createTopupOrder_v1 = functions.region(REGION).https.onCall(async (data,
     { merge: true }
   );
 
+  logEvent("payment.order.create.result", {
+    userId: shortLogId(userId),
+    orderId: orderRef.id,
+    gateway,
+    amount,
+    currency,
+    status: gateway === "sandbox" ? "pending" : "created",
+  });
+
   return {
     ok: true,
     orderId: orderRef.id,
@@ -192,6 +474,8 @@ exports.verifyTopupSandbox_v1 = functions.region(REGION).https.onCall(async (dat
     throw new functions.https.HttpsError("unauthenticated", "Login required");
   }
 
+  assertSandboxTopupEnabled();
+
   const userId = context.auth.uid;
   const orderId = strOr(data && data.orderId).trim();
   const paymentId = strOr(data && data.paymentId).trim() || `sandbox_pay_${Date.now()}`;
@@ -200,6 +484,12 @@ exports.verifyTopupSandbox_v1 = functions.region(REGION).https.onCall(async (dat
   if (!orderId) {
     throw new functions.https.HttpsError("invalid-argument", "orderId required");
   }
+
+  logEvent("payment.sandbox.verify.request", {
+    userId: shortLogId(userId),
+    orderId,
+    approve,
+  });
 
   const db = admin.firestore();
 
@@ -213,7 +503,10 @@ exports.verifyTopupSandbox_v1 = functions.region(REGION).https.onCall(async (dat
   });
 
   if (!topupLockAcquired) {
-    console.log("verifyTopupSandbox_v1 duplicate blocked:", orderId);
+    logEvent("payment.sandbox.verify.duplicate_blocked", {
+      userId: shortLogId(userId),
+      orderId,
+    });
     return {
       ok: true,
       orderId,
@@ -337,6 +630,12 @@ exports.verifyTopupSandbox_v1 = functions.region(REGION).https.onCall(async (dat
     );
   });
 
+  logEvent("payment.sandbox.verify.result", {
+    userId: shortLogId(userId),
+    orderId,
+    status: approve ? "verified" : "failed",
+  });
+
   return {
     ok: true,
     orderId,
@@ -424,6 +723,12 @@ exports.createRazorpayOrder_v1 = functions.region(REGION).https.onCall(async (da
   const currency = safeCurrency(data && data.currency);
   const metadata = data && typeof data.metadata === "object" && data.metadata ? data.metadata : {};
 
+  logEvent("payment.razorpay.order.request", {
+    userId: shortLogId(userId),
+    amount,
+    currency,
+  });
+
   assertTestOnlyTopup({
     amount,
     currency,
@@ -439,6 +744,7 @@ exports.createRazorpayOrder_v1 = functions.region(REGION).https.onCall(async (da
     throw new functions.https.HttpsError("failed-precondition", "User profile missing");
   }
 
+  const { keyId } = getRazorpayConfig();
   const razorpay = getRazorpayClient();
 
   let razorpayOrder;
@@ -454,7 +760,11 @@ exports.createRazorpayOrder_v1 = functions.region(REGION).https.onCall(async (da
       },
     });
   } catch (e) {
-    console.log("createRazorpayOrder_v1 Razorpay create error:", e);
+    logError("payment.razorpay.order.gateway_error", e, {
+      userId: shortLogId(userId),
+      amount,
+      currency,
+    });
     throw new functions.https.HttpsError(
       "internal",
       strOr(e && e.message, "Unable to create Razorpay order.")
@@ -494,18 +804,21 @@ exports.createRazorpayOrder_v1 = functions.region(REGION).https.onCall(async (da
     { merge: true }
   );
 
-  return {
-    ok: true,
+  logEvent("payment.razorpay.order.result", {
+    userId: shortLogId(userId),
     orderId: orderRef.id,
-    razorpayOrderId: gatewayOrderId,
     gatewayOrderId,
     amount,
     currency,
-    gateway: "razorpay",
-    status: "pending",
-    testMode: true,
-    ...launchModeMeta({ gateway: "razorpay" }),
-  };
+  });
+
+  return buildRazorpayOrderResponse({
+    orderId: orderRef.id,
+    keyId,
+    gatewayOrderId,
+    amount,
+    currency,
+  });
 });
 
 exports.verifyRazorpayPayment_v1 = functions.region(REGION).https.onCall(async (data, context) => {
@@ -532,6 +845,13 @@ exports.verifyRazorpayPayment_v1 = functions.region(REGION).https.onCall(async (
     );
   }
 
+  logEvent("payment.razorpay.verify.request", {
+    userId: shortLogId(userId),
+    orderId,
+    gatewayOrderId: razorpayOrderId,
+    hasPaymentId: Boolean(paymentId),
+  });
+
   const { keySecret } = getRazorpayConfig();
   if (!keySecret) {
     throw new functions.https.HttpsError(
@@ -546,6 +866,12 @@ exports.verifyRazorpayPayment_v1 = functions.region(REGION).https.onCall(async (
     .digest("hex");
 
   if (expectedSignature !== signature) {
+    logEvent("payment.razorpay.verify.failure", {
+      userId: shortLogId(userId),
+      orderId,
+      gatewayOrderId: razorpayOrderId,
+      reason: "invalid_signature",
+    });
     throw new functions.https.HttpsError("permission-denied", "Invalid payment signature");
   }
 
@@ -561,7 +887,10 @@ exports.verifyRazorpayPayment_v1 = functions.region(REGION).https.onCall(async (
   });
 
   if (!topupLockAcquired) {
-    console.log("verifyRazorpayPayment_v1 duplicate blocked:", orderId);
+    logEvent("payment.razorpay.verify.duplicate_blocked", {
+      userId: shortLogId(userId),
+      orderId,
+    });
     return {
       ok: true,
       orderId,
@@ -575,6 +904,45 @@ exports.verifyRazorpayPayment_v1 = functions.region(REGION).https.onCall(async (
   const orderRef = paymentOrderRef(db, orderId);
   const userRef = db.collection("users").doc(userId);
   const topupTxRef = walletTxRef(db, buildTopupTxId(orderId));
+
+  const [orderSnapForGateway, existingTopupTxForGateway] = await Promise.all([
+    orderRef.get(),
+    topupTxRef.get(),
+  ]);
+  if (!orderSnapForGateway.exists) {
+    throw new functions.https.HttpsError("not-found", "Payment order not found");
+  }
+  const orderForGateway = orderSnapForGateway.data() || {};
+  const gatewayOrderUserId = strOr(orderForGateway.userId);
+  const gatewayOrderGateway = strOr(orderForGateway.gateway).trim().toLowerCase();
+  const gatewayOrderStatus = strOr(orderForGateway.status).trim().toLowerCase();
+  const gatewayOrderAmount = intOr(orderForGateway.amount, 0);
+  const gatewayOrderCurrency = safeCurrency(orderForGateway.currency);
+  const storedGatewayOrderIdForGateway = strOr(orderForGateway.orderId).trim();
+
+  if (gatewayOrderUserId !== userId) {
+    throw new functions.https.HttpsError("permission-denied", "This payment order is not yours");
+  }
+  if (gatewayOrderGateway !== "razorpay") {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "This payment order is not a Razorpay order"
+    );
+  }
+  if (storedGatewayOrderIdForGateway !== razorpayOrderId) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Razorpay order mismatch"
+    );
+  }
+  if (gatewayOrderStatus !== "verified" && !existingTopupTxForGateway.exists) {
+    await assertRazorpayPaymentVerifiedByGateway({
+      paymentId,
+      razorpayOrderId,
+      amount: gatewayOrderAmount,
+      currency: gatewayOrderCurrency,
+    });
+  }
 
   await db.runTransaction(async (tx) => {
     const [orderSnap, userSnap, existingTopupTxSnap] = await Promise.all([
@@ -693,6 +1061,13 @@ exports.verifyRazorpayPayment_v1 = functions.region(REGION).https.onCall(async (
     );
   });
 
+  logEvent("payment.razorpay.verify.result", {
+    userId: shortLogId(userId),
+    orderId,
+    gatewayOrderId: razorpayOrderId,
+    status: "verified",
+  });
+
   return {
     ok: true,
     orderId,
@@ -715,6 +1090,24 @@ exports.requestWithdrawal_v1 = functions.region(REGION).https.onCall(async (data
   const note = strOr(data && data.note, "").trim().slice(0, 200);
   const payoutMode = strOr(data && data.payoutMode, "manual_test").trim();
   const realMoneyEnabled = boolOr(data && data.realMoneyEnabled, false);
+  const payoutAccountSnapshot = sanitizePayoutAccountSnapshot(
+    data && data.payoutAccountSnapshot
+  );
+
+  if (!hasUsablePayoutAccountSnapshot(payoutAccountSnapshot)) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Add a payout method before requesting withdrawal."
+    );
+  }
+
+  logEvent("withdrawal.create.request", {
+    userId: shortLogId(userId),
+    amount,
+    payoutMode,
+    realMoneyEnabled,
+    hasPayoutSnapshot: Object.keys(payoutAccountSnapshot).length > 0,
+  });
 
   assertTestOnlyWithdrawal({
     amount,
@@ -734,6 +1127,9 @@ exports.requestWithdrawal_v1 = functions.region(REGION).https.onCall(async (data
   });
 
   if (!withdrawalLockAcquired) {
+    logEvent("withdrawal.create.duplicate_blocked", {
+      userId: shortLogId(userId),
+    });
     throw new functions.https.HttpsError(
       "resource-exhausted",
       "Duplicate withdrawal attempt blocked. Please wait a moment and try again."
@@ -741,19 +1137,11 @@ exports.requestWithdrawal_v1 = functions.region(REGION).https.onCall(async (data
   }
 
   const userRef = db.collection("users").doc(userId);
-
-  const [userSnap, pendingSnap] = await Promise.all([
-    userRef.get(),
-    db.collection("withdrawal_requests")
-      .where("userId", "==", userId)
-      .where("status", "==", "pending")
-      .limit(1)
-      .get(),
-  ]);
-
-  if (!userSnap.exists) {
-    throw new functions.https.HttpsError("failed-precondition", "User profile missing");
-  }
+  const pendingSnap = await db.collection("withdrawal_requests")
+    .where("userId", "==", userId)
+    .where("status", "==", "pending")
+    .limit(1)
+    .get();
 
   if (!pendingSnap.empty) {
     throw new functions.https.HttpsError(
@@ -762,57 +1150,93 @@ exports.requestWithdrawal_v1 = functions.region(REGION).https.onCall(async (data
     );
   }
 
-  const user = userSnap.data() || {};
-  const earningsCredits = intOr(user.earningsCredits, 0);
-  const credits = intOr(user.credits, 0);
-  const displayName = strOr(user.displayName, "Friendify User");
-
-  if (earningsCredits <= 0) {
-    throw new functions.https.HttpsError(
-      "failed-precondition",
-      "You do not have earnings available for withdrawal yet."
-    );
-  }
-
-  if (amount > earningsCredits) {
-    throw new functions.https.HttpsError(
-      "failed-precondition",
-      `You can request up to ₹${earningsCredits}`
-    );
-  }
-
-  if (amount > credits) {
-    throw new functions.https.HttpsError(
-      "failed-precondition",
-      `Your current credits are lower than the requested withdrawal amount. Current credits: ₹${credits}`
-    );
-  }
-
   const nowMs = Date.now();
   const requestRef = db.collection("withdrawal_requests").doc();
 
-  await requestRef.set({
-    userId,
-    userName: displayName,
+  await db.runTransaction(async (tx) => {
+    const userSnap = await tx.get(userRef);
+    if (!userSnap.exists) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "User profile missing"
+      );
+    }
+
+    const user = userSnap.data() || {};
+    const earningsCredits = intOr(user.earningsCredits, 0);
+    const credits = intOr(user.credits, 0);
+    const reservedCredits = intOr(user.reservedCredits, 0);
+    const pendingWithdrawalCredits = intOr(
+      user.pendingWithdrawalCredits,
+      0
+    );
+    const usableCredits = computeWithdrawalUsableBalance({
+      credits,
+      reservedCredits,
+      pendingWithdrawalCredits,
+    });
+    const displayName = strOr(user.displayName, "Friendify User");
+
+    if (earningsCredits <= 0) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "You do not have earnings available for withdrawal yet."
+      );
+    }
+
+    if (amount > earningsCredits) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        `You can request up to INR ${earningsCredits}`
+      );
+    }
+
+    if (amount > usableCredits) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        `Your usable balance is lower than the requested withdrawal amount. Current usable balance: INR ${usableCredits}`
+      );
+    }
+
+    tx.update(userRef, {
+      pendingWithdrawalCredits: pendingWithdrawalCredits + amount,
+      lastSeen: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    tx.set(requestRef, {
+      userId,
+      userName: displayName,
+      amount,
+      note,
+      status: "pending",
+      payoutMode: "manual_test",
+      realMoneyEnabled: false,
+      earningsSnapshot: earningsCredits,
+      creditsSnapshot: credits,
+      reservedCreditsSnapshot: reservedCredits,
+      usableCreditsSnapshot: usableCredits,
+      heldCredits: amount,
+      holdStatus: "held",
+      requestedAt: admin.firestore.FieldValue.serverTimestamp(),
+      requestedAtMs: nowMs,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAtMs: nowMs,
+      statusReason: "",
+      currency: "INR",
+      adminNote: "",
+      payoutAccountSnapshot,
+      idempotencyKey: `withdraw_${userId}_${nowMs}`,
+      settledInLedger: false,
+      launchMode: "test_only",
+      productionReady: false,
+    });
+  });
+
+  logEvent("withdrawal.create.result", {
+    userId: shortLogId(userId),
+    requestId: requestRef.id,
     amount,
-    note,
     status: "pending",
-    payoutMode: "manual_test",
-    realMoneyEnabled: false,
-    earningsSnapshot: earningsCredits,
-    creditsSnapshot: credits,
-    requestedAt: admin.firestore.FieldValue.serverTimestamp(),
-    requestedAtMs: nowMs,
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    updatedAtMs: nowMs,
-    statusReason: "",
-    currency: "INR",
-    adminNote: "",
-    payoutAccountSnapshot: {},
-    idempotencyKey: `withdraw_${userId}_${nowMs}`,
-    settledInLedger: false,
-    launchMode: "test_only",
-    productionReady: false,
   });
 
   return {
@@ -840,9 +1264,10 @@ exports.cancelMyWithdrawal_v1 = functions.region(REGION).https.onCall(async (dat
 
   const db = admin.firestore();
   const requestRef = db.collection("withdrawal_requests").doc(requestId);
+  const userRef = db.collection("users").doc(userId);
 
   await db.runTransaction(async (tx) => {
-    const snap = await tx.get(requestRef);
+    const [snap, userSnap] = await Promise.all([tx.get(requestRef), tx.get(userRef)]);
     if (!snap.exists) {
       throw new functions.https.HttpsError("not-found", "Withdrawal request not found");
     }
@@ -851,9 +1276,48 @@ exports.cancelMyWithdrawal_v1 = functions.region(REGION).https.onCall(async (dat
     const ownerId = strOr(req.userId);
     const status = strOr(req.status).trim().toLowerCase();
     const settledInLedger = req.settledInLedger === true;
+    const heldCredits = intOr(req.heldCredits, 0);
 
     if (ownerId !== userId) {
       throw new functions.https.HttpsError("permission-denied", "This request is not yours");
+    }
+
+    if (status === "cancelled") {
+      const repairPlan = planCancelledWithdrawalHoldRepair({
+        request: req,
+        user: userSnap.exists ? userSnap.data() || {} : {},
+        requestId,
+      });
+
+      if (repairPlan.kind === "error") {
+        throw new functions.https.HttpsError(
+          repairPlan.code,
+          repairPlan.message
+        );
+      }
+
+      if (repairPlan.kind === "repair") {
+        const now = Date.now();
+        if (!userSnap.exists) {
+          throw new functions.https.HttpsError("not-found", "User not found");
+        }
+
+        tx.update(userRef, {
+          pendingWithdrawalCredits: repairPlan.newPendingWithdrawalCredits,
+          lastSeen: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        tx.update(requestRef, {
+          holdStatus: "released",
+          holdReleasedAt: admin.firestore.FieldValue.serverTimestamp(),
+          holdReleasedAtMs: now,
+          holdReleaseReason: "cancelled_hold_repair",
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAtMs: now,
+        });
+      }
+
+      return;
     }
 
     if (status !== "pending") {
@@ -870,6 +1334,18 @@ exports.cancelMyWithdrawal_v1 = functions.region(REGION).https.onCall(async (dat
       );
     }
 
+    if (userSnap.exists && heldCredits > 0) {
+      const user = userSnap.data() || {};
+      const pendingWithdrawalCredits = intOr(user.pendingWithdrawalCredits, 0);
+      tx.update(userRef, {
+        pendingWithdrawalCredits: releaseWithdrawalHoldBalance({
+          currentPendingWithdrawalCredits: pendingWithdrawalCredits,
+          heldCredits,
+        }),
+        lastSeen: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
     tx.update(requestRef, {
       status: "cancelled",
       cancelledBy: userId,
@@ -878,6 +1354,9 @@ exports.cancelMyWithdrawal_v1 = functions.region(REGION).https.onCall(async (dat
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAtMs: Date.now(),
       statusReason: "Cancelled by user",
+      holdStatus: "released",
+      holdReleasedAt: admin.firestore.FieldValue.serverTimestamp(),
+      holdReleaseReason: "cancelled_by_user",
       launchMode: "test_only",
       productionReady: false,
       realMoneyEnabled: false,
