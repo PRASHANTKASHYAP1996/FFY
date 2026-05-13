@@ -2,12 +2,24 @@
   "name": "friendify-functions",
   "private": true,
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "main": "index.js",
   "scripts": {
     "lint": "eslint .",
-    "check": "node -c index.js && node -c src/shared.js && node -c src/calls.js && node -c src/triggers.js && node -c src/payments.js && node -c src/admin.js && node -c src/admin_dashboard.js && node -c src/analytics.js",
+    "check": "node -c index.js && node -c src/shared.js && node -c src/withdrawals.js && node -c src/calls.js && node -c src/triggers.js && node -c src/payments.js && node -c src/admin.js && node -c src/admin_dashboard.js && node -c src/analytics.js && node -c src/social.js",
+    "check:reset": "node --check scripts/reset-friendify-project.js",
+    "check:agora": "node scripts/check-agora-config.js",
+    "check:chat-contract": "node --check backfill_chat_session_contract.js",
+    "check:migrate-chat-docids": "node --check migrate_chat_session_doc_ids.js",
+    "check:syntax": "npm run check && npm run check:chat-contract && npm run check:migrate-chat-docids",
+    "reset:preview": "node scripts/reset-friendify-project.js",
+    "backfill:chat-contract": "node backfill_chat_session_contract.js --dry-run",
+    "migrate:chat-docids": "node migrate_chat_session_doc_ids.js --dry-run",
+    "test:behavioral": "node --test test/calls.test.js test/withdrawals.test.js test/payments.test.js test/social.test.js test/admin_dashboard.test.js",
+    "test:rules:chat-messages": "firebase emulators:exec --only firestore \"node --test test/firestore.chat_messages.rules.test.js\"",
+    "test:critical-contracts": "npm run test:behavioral",
+    "test": "npm run test:behavioral",
     "serve": "firebase emulators:start --only functions",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log"
@@ -15,10 +27,11 @@
   "dependencies": {
     "agora-access-token": "^2.0.4",
     "firebase-admin": "^12.7.0",
-    "firebase-functions": "^5.1.1",
+    "firebase-functions": "^6.6.0",
     "razorpay": "^2.9.4"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.4",
     "eslint": "^8.57.1",
     "eslint-config-google": "^0.14.0"
   }
