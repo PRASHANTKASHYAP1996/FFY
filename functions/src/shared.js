@@ -1,5 +1,5 @@
 const admin = require("firebase-admin");
-const functions = require("firebase-functions");
+const functions = require("firebase-functions/v1");
 const Razorpay = require("razorpay");
 const crypto = require("crypto");
 
@@ -20,6 +20,7 @@ const PLATFORM_PERCENT = 20;
 
 const RATE_OPTIONS = [5, 10, 20, 50, 100];
 const RINGING_TIMEOUT_SECONDS = 45;
+const BILLING_GRACE_SECONDS = 60;
 
 const MAX_CALLS_PER_MINUTE = 3;
 const MAX_CALLS_PER_HOUR = 12;
@@ -51,6 +52,256 @@ function strOr(val, fallback = "") {
 
 function boolOr(val, fallback = false) {
   return typeof val === "boolean" ? val : fallback;
+}
+
+function adminActionCategory(actionType = "") {
+  const safe = strOr(actionType).trim().toLowerCase();
+  if (safe === "admin_dashboard_cache_refreshed") return "cache";
+  if (safe.includes("withdrawal") || safe.includes("payout")) {
+    return "finance";
+  }
+  if (safe.includes("report") || safe.includes("moderation")) {
+    return "moderation";
+  }
+  if (safe.includes("account_deletion")) return "accountDeletion";
+  if (safe.includes("user_blocked") || safe.includes("user_unblocked")) {
+    return "userAccess";
+  }
+  return "other";
+}
+
+function shortLogId(value) {
+  const safe = strOr(value).trim();
+  if (!safe) return "";
+  if (safe.length <= 12) return safe;
+  return `${safe.slice(0, 6)}...${safe.slice(-4)}`;
+}
+
+function logKeyNeedsRedaction(normalizedKey) {
+  return normalizedKey.includes("token") ||
+    normalizedKey.includes("secret") ||
+    normalizedKey.includes("signature") ||
+    normalizedKey.includes("certificate") ||
+    normalizedKey.includes("password") ||
+    normalizedKey.includes("accountnumber");
+}
+
+function logKeyLooksLikeId(normalizedKey) {
+  if (normalizedKey === "id" || normalizedKey === "uid") return true;
+  if (normalizedKey === "valid") return false;
+  return normalizedKey.includes("uid") ||
+    normalizedKey.includes("userid") ||
+    normalizedKey.includes("traceid") ||
+    normalizedKey.includes("callid") ||
+    normalizedKey.includes("sessionid") ||
+    normalizedKey.includes("messageid") ||
+    normalizedKey.includes("orderid") ||
+    normalizedKey.includes("paymentid") ||
+    normalizedKey.includes("requestid") ||
+    normalizedKey.endsWith("id");
+}
+
+function safeLogFieldValue(normalizedKey, value) {
+  if (typeof value === "string") {
+    if (logKeyLooksLikeId(normalizedKey)) return shortLogId(value);
+    return value.length > 160 ? `${value.slice(0, 157)}...` : value;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean" || value === null) {
+    return value;
+  }
+
+  return undefined;
+}
+
+function safeLogFields(fields = {}) {
+  const out = {};
+  Object.entries(fields || {}).forEach(([key, value]) => {
+    const normalizedKey = strOr(key).toLowerCase();
+    if (logKeyNeedsRedaction(normalizedKey)) {
+      out[key] = "[redacted]";
+      return;
+    }
+
+    const safeValue = safeLogFieldValue(normalizedKey, value);
+    if (safeValue !== undefined) out[key] = safeValue;
+  });
+  return out;
+}
+
+function logEvent(eventName, fields = {}) {
+  console.log(`[friendify] ${eventName}`, safeLogFields(fields));
+}
+
+function logError(eventName, error, fields = {}) {
+  logEvent(eventName, {
+    ...fields,
+    errorCode: strOr(error && error.code),
+    errorMessage: strOr(error && error.message, "unknown error"),
+  });
+}
+
+async function deleteStoragePathIfSafe(
+  rawPath,
+  { allowedPrefixes = [] } = {}
+) {
+  const normalizedPath = strOr(rawPath)
+    .trim()
+    .replace(/^\/+/, "");
+  if (!normalizedPath) {
+    return { attempted: false, deleted: false, reason: "missing_path" };
+  }
+  if (normalizedPath.includes("..") || normalizedPath.includes("\\")) {
+    return { attempted: false, deleted: false, reason: "unsafe_path" };
+  }
+
+  const prefixes = allowedPrefixes
+    .map((prefix) => strOr(prefix).trim().replace(/^\/+/, ""))
+    .filter(Boolean);
+  if (
+    prefixes.length > 0 &&
+    !prefixes.some((prefix) => normalizedPath.startsWith(prefix))
+  ) {
+    return { attempted: false, deleted: false, reason: "prefix_mismatch" };
+  }
+
+  try {
+    await admin.storage().bucket().file(normalizedPath).delete({
+      ignoreNotFound: true,
+    });
+    return { attempted: true, deleted: true, path: normalizedPath };
+  } catch (error) {
+    logError("storage.delete_failed", error, { path: normalizedPath });
+    return {
+      attempted: true,
+      deleted: false,
+      path: normalizedPath,
+      reason: "delete_failed",
+    };
+  }
+}
+
+async function deleteCollectionGroupDocsByField({
+  collectionId,
+  field,
+  value,
+  batchSize = 250,
+}) {
+  const safeCollectionId = strOr(collectionId).trim();
+  const safeField = strOr(field).trim();
+  const safeValue = strOr(value).trim();
+  if (!safeCollectionId || !safeField || !safeValue) return 0;
+
+  let deleted = 0;
+  while (true) {
+    const snap = await admin.firestore()
+      .collectionGroup(safeCollectionId)
+      .where(safeField, "==", safeValue)
+      .limit(batchSize)
+      .get();
+    if (snap.empty) return deleted;
+
+    const batch = admin.firestore().batch();
+    snap.docs.forEach((doc) => batch.delete(doc.ref));
+    await batch.commit();
+    deleted += snap.size;
+  }
+}
+
+async function reviewReportsForDeletedPost({
+  postId,
+  resolution = "post_deleted",
+  reviewedBy = "system",
+  note = "",
+  batchSize = 250,
+}) {
+  const safePostId = strOr(postId).trim();
+  if (!safePostId) return 0;
+
+  const now = Date.now();
+  const snap = await admin.firestore()
+    .collection("reports")
+    .where("postId", "==", safePostId)
+    .limit(batchSize)
+    .get();
+  if (snap.empty) return 0;
+
+  const closedStatuses = new Set(["reviewed", "resolved", "closed"]);
+  const batch = admin.firestore().batch();
+  let reviewed = 0;
+
+  snap.docs.forEach((doc) => {
+    const data = doc.data() || {};
+    const status = strOr(data.status, "open").trim().toLowerCase();
+    if (closedStatuses.has(status)) return;
+
+    batch.update(doc.ref, {
+      status: "reviewed",
+      resolution: strOr(resolution, "post_deleted").trim() || "post_deleted",
+      adminNote: strOr(note).trim(),
+      reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+      reviewedAtMs: now,
+      reviewedBy: strOr(reviewedBy, "system").trim() || "system",
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAtMs: now,
+    });
+    reviewed += 1;
+  });
+
+  if (reviewed > 0) {
+    await batch.commit();
+  }
+  return reviewed;
+}
+
+async function reviewReportsForDeletedComment({
+  postId,
+  commentId,
+  resolution = "comment_deleted",
+  reviewedBy = "system",
+  note = "",
+  batchSize = 250,
+}) {
+  const safePostId = strOr(postId).trim();
+  const safeCommentId = strOr(commentId).trim();
+  if (!safePostId || !safeCommentId) return 0;
+
+  const now = Date.now();
+  const snap = await admin.firestore()
+    .collection("reports")
+    .where("commentId", "==", safeCommentId)
+    .limit(batchSize)
+    .get();
+  if (snap.empty) return 0;
+
+  const closedStatuses = new Set(["reviewed", "resolved", "closed"]);
+  const batch = admin.firestore().batch();
+  let reviewed = 0;
+
+  snap.docs.forEach((doc) => {
+    const data = doc.data() || {};
+    if (strOr(data.postId).trim() !== safePostId) return;
+
+    const status = strOr(data.status, "open").trim().toLowerCase();
+    if (closedStatuses.has(status)) return;
+
+    batch.update(doc.ref, {
+      status: "reviewed",
+      resolution: strOr(resolution, "comment_deleted").trim() || "comment_deleted",
+      adminNote: strOr(note).trim(),
+      reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+      reviewedAtMs: now,
+      reviewedBy: strOr(reviewedBy, "system").trim() || "system",
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAtMs: now,
+    });
+    reviewed += 1;
+  });
+
+  if (reviewed > 0) {
+    await batch.commit();
+  }
+  return reviewed;
 }
 
 const APP_CHECK_CALLABLE_MODE = (() => {
@@ -87,9 +338,19 @@ function assertCallableAppCheck(context, fnName) {
   }
 
   if (appCheckEnforceEnabled()) {
+    const uid = strOr(context && context.auth && context.auth.uid).trim();
+    logEvent("callable.appcheck.missing", {
+      fnName,
+      authState: uid ? "authenticated" : "anonymous",
+      uid: shortLogId(uid),
+    });
     throw new functions.https.HttpsError(
       "failed-precondition",
-      "App Check token is required."
+      "app_check_failed",
+      {
+        reason: "app_check_failed",
+        appCheckStatus: "failed",
+      }
     );
   }
 }
@@ -166,6 +427,76 @@ function getAgoraConfig() {
   return { appId: envAppId, appCertificate: envAppCertificate };
 }
 
+function isPlaceholderSecret(value) {
+  const raw = strOr(value).trim();
+  if (!raw) return false;
+
+  const lower = raw.toLowerCase();
+  return (
+    raw.includes("<") ||
+    raw.includes(">") ||
+    lower.includes("your-") ||
+    lower.includes("your_") ||
+    lower.includes("todo") ||
+    lower.includes("replace_me") ||
+    lower.includes("placeholder")
+  );
+}
+
+function evaluateAgoraTokenConfig({
+  appId,
+  appCertificate,
+  tokenBuilderAvailable = Boolean(AgoraTokenBuilder && RtcRole),
+} = {}) {
+  const safeAppId =
+    appId === undefined ? strOr(process.env.AGORA_APP_ID) : strOr(appId);
+  const safeAppCertificate =
+    appCertificate === undefined
+      ? strOr(process.env.AGORA_APP_CERTIFICATE)
+      : strOr(appCertificate);
+
+  const missingRequirements = [];
+  if (!tokenBuilderAvailable) {
+    missingRequirements.push("agora-access-token package");
+  }
+  if (!safeAppId) {
+    missingRequirements.push("AGORA_APP_ID");
+  }
+  if (!safeAppCertificate) {
+    missingRequirements.push("AGORA_APP_CERTIFICATE");
+  }
+  if (safeAppId && isPlaceholderSecret(safeAppId)) {
+    missingRequirements.push("AGORA_APP_ID_PLACEHOLDER");
+  }
+  if (safeAppCertificate && isPlaceholderSecret(safeAppCertificate)) {
+    missingRequirements.push("AGORA_APP_CERTIFICATE_PLACEHOLDER");
+  }
+
+  return {
+    appId: safeAppId,
+    appCertificate: safeAppCertificate,
+    tokenBuilderAvailable,
+    missingRequirements,
+    isReady: missingRequirements.length === 0,
+  };
+}
+
+function assertAgoraTokenConfigReady(overrides = {}) {
+  const readiness = evaluateAgoraTokenConfig(overrides);
+  if (readiness.isReady) {
+    return readiness;
+  }
+
+  throw new functions.https.HttpsError(
+    "failed-precondition",
+    "server_config_missing",
+    {
+      reason: "server_config_missing",
+      missingRequirements: readiness.missingRequirements,
+    }
+  );
+}
+
 function getRazorpayConfig() {
   const envKeyId = strOr(process.env.RAZORPAY_KEY_ID);
   const envKeySecret = strOr(process.env.RAZORPAY_KEY_SECRET);
@@ -208,6 +539,21 @@ function buildAgoraTokenIfPossible({ channelId, uidInt, expireSeconds = 3600 }) 
   );
 }
 
+function buildAgoraTokenOrThrow({ channelId, uidInt, expireSeconds = 3600 }) {
+  const { appId, appCertificate } = assertAgoraTokenConfigReady();
+  const now = Math.floor(Date.now() / 1000);
+  const expireTs = now + expireSeconds;
+
+  return AgoraTokenBuilder.buildTokenWithUid(
+    appId,
+    appCertificate,
+    strOr(channelId),
+    intOr(uidInt, 0),
+    RtcRole.PUBLISHER,
+    expireTs
+  );
+}
+
 function timestampToMs(ts) {
   if (ts && typeof ts.toDate === "function") {
     return ts.toDate().getTime();
@@ -216,16 +562,22 @@ function timestampToMs(ts) {
 }
 
 function computeFinalSeconds(callData) {
-  const startedAtMs = timestampToMs(callData.startedAt);
+  const explicitEndedSeconds = intOr(callData.endedSeconds, -1);
+  if (explicitEndedSeconds >= 0) {
+    return explicitEndedSeconds;
+  }
+
+  const startedAtMs =
+    intOr(callData.billableStartedAtMs, 0) ||
+    intOr(callData.bothJoinedAtMs, 0) ||
+    timestampToMs(callData.billableStartedAt) ||
+    timestampToMs(callData.bothJoinedAt) ||
+    intOr(callData.startedAtMs, 0) ||
+    timestampToMs(callData.startedAt);
   const endedAtMs = timestampToMs(callData.endedAt);
 
   if (startedAtMs > 0 && endedAtMs > 0 && endedAtMs >= startedAtMs) {
     return Math.max(0, Math.floor((endedAtMs - startedAtMs) / 1000));
-  }
-
-  const explicitEndedSeconds = intOr(callData.endedSeconds, -1);
-  if (explicitEndedSeconds >= 0) {
-    return explicitEndedSeconds;
   }
 
   if (startedAtMs > 0) {
@@ -249,7 +601,12 @@ function isMissedReason(reason) {
     "timeout",
     "callee_timeout",
     "ring_timeout",
-  ].includes(strOr(reason));
+  ].includes(strOr(reason).trim());
+}
+
+function normalizedRejectedEndedReason(reason) {
+  const safeReason = strOr(reason, "rejected").trim() || "rejected";
+  return isMissedReason(safeReason) ? "missed" : safeReason;
 }
 
 function callCreatedAtMs(callData) {
@@ -453,6 +810,10 @@ async function acquireExecutionLock({
 }
 
 async function safeReleaseReserveAndLockTx(tx, { db, callRef, callData }) {
+  if (callNeedsSettlementCleanup(callData)) {
+    return;
+  }
+
   const callerId = strOr(callData.callerId);
   const calleeId = strOr(callData.calleeId);
   const reservedUpfront = intOr(callData.reservedUpfront, 0);
@@ -496,7 +857,9 @@ async function safeReleaseReserveAndLockTx(tx, { db, callRef, callData }) {
     if (callerActiveCallId === callRef.id) {
       tx.update(callerRef, {
         activeCallId: "",
+        isOnCall: false,
         activeCallUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        lastSeen: admin.firestore.FieldValue.serverTimestamp(),
       });
     }
   }
@@ -506,10 +869,30 @@ async function safeReleaseReserveAndLockTx(tx, { db, callRef, callData }) {
     if (calleeActiveCallId === callRef.id) {
       tx.update(calleeRef, {
         activeCallId: "",
+        isOnCall: false,
         activeCallUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        lastSeen: admin.firestore.FieldValue.serverTimestamp(),
       });
     }
   }
+}
+
+function callNeedsSettlementCleanup(callData = {}) {
+  return strOr(callData.status) === "ended" && boolOr(callData.settled, false) !== true;
+}
+
+function callShouldHoldReserve(callData = {}) {
+  const reservedUpfront = intOr(callData.reservedUpfront, 0);
+  if (reservedUpfront <= 0 || boolOr(callData.reserveReleased, false)) {
+    return false;
+  }
+
+  const status = strOr(callData.status);
+  return status === "ringing" || status === "accepted" || callNeedsSettlementCleanup(callData);
+}
+
+function callShouldKeepBusyLock(callData = {}) {
+  return isLiveStatus(strOr(callData.status)) || callNeedsSettlementCleanup(callData);
 }
 
 async function endCallAsRejectedIfStillRinging({ db, callRef, reason, endedBy = "system" }) {
@@ -522,11 +905,17 @@ async function endCallAsRejectedIfStillRinging({ db, callRef, reason, endedBy = 
 
     if (statusNow !== "ringing") return;
 
+    const rawReason = strOr(reason, "rejected").trim() || "rejected";
+    const endedReason = normalizedRejectedEndedReason(rawReason);
+
     tx.update(callRef, {
       status: "rejected",
       endedAt: admin.firestore.FieldValue.serverTimestamp(),
       endedAtMs: Date.now(),
-      rejectedReason: reason,
+      rejectedReason: rawReason,
+      endedReason,
+      endReasonCode: rawReason,
+      missedBy: endedReason === "missed" ? strOr(callNow.calleeId) : "",
       endedBy,
       endedSeconds: 0,
     });
@@ -576,6 +965,7 @@ module.exports = {
   PLATFORM_PERCENT,
   RATE_OPTIONS,
   RINGING_TIMEOUT_SECONDS,
+  BILLING_GRACE_SECONDS,
   MAX_CALLS_PER_MINUTE,
   MAX_CALLS_PER_HOUR,
   CLEANUP_BATCH_LIMIT,
@@ -588,6 +978,15 @@ module.exports = {
   intOr,
   strOr,
   boolOr,
+  adminActionCategory,
+  shortLogId,
+  safeLogFields,
+  logEvent,
+  logError,
+  deleteStoragePathIfSafe,
+  deleteCollectionGroupDocsByField,
+  reviewReportsForDeletedPost,
+  reviewReportsForDeletedComment,
   assertCallableAppCheck,
   stringArray,
   payoutFromVisibleRate,
@@ -597,14 +996,19 @@ module.exports = {
   minuteKey,
   hourKey,
   getAgoraConfig,
+  evaluateAgoraTokenConfig,
+  assertAgoraTokenConfigReady,
   getRazorpayConfig,
   getRazorpayClient,
   buildAgoraTokenIfPossible,
+  buildAgoraTokenOrThrow,
+  isPlaceholderSecret,
   timestampToMs,
   computeFinalSeconds,
   isFinalStatus,
   isLiveStatus,
   isMissedReason,
+  normalizedRejectedEndedReason,
   callCreatedAtMs,
   callEndedAtMs,
   ringDurationMs,
@@ -618,6 +1022,9 @@ module.exports = {
   createWalletTxDoc,
   createPaymentOrderDoc,
   acquireExecutionLock,
+  callNeedsSettlementCleanup,
+  callShouldHoldReserve,
+  callShouldKeepBusyLock,
   safeReleaseReserveAndLockTx,
   endCallAsRejectedIfStillRinging,
   applyFollowerDelta,
