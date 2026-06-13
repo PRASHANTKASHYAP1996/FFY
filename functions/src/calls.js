@@ -22,7 +22,7 @@ const {
   assertAgoraTokenConfigReady,
   buildAgoraTokenOrThrow,
   timestampToMs,
-  computeFinalSeconds,
+  serverBillableSeconds,
   isFinalStatus,
   isLiveStatus,
   walletTxRef,
@@ -885,8 +885,7 @@ function directionalCallApprovalError({
     };
   }
 
-  if (direction.actualListenerId !== direction.actualListenerId.trim() ||
-      !direction.participantIds.includes(direction.actualListenerId)) {
+  if (!direction.participantIds.includes(direction.actualListenerId)) {
     return {
       code: "failed-precondition",
       reason: "listener_mismatch",
@@ -2487,7 +2486,7 @@ exports.acceptIncomingCall_v1 = functions
           await clearParticipantBusyLocksTx(tx, {
             db,
             callId,
-            callerId,
+            callerId: call.callerId,
             calleeId,
           });
           tx.update(callRef, {
@@ -4078,7 +4077,7 @@ async function settleEndedCallIfNeeded({
     const reservedUpfront = intOr(callNow.reservedUpfront, speakerRate);
     const maxPrepaidMinutes = intOr(callNow.maxPrepaidMinutes, 0);
 
-    const seconds = computeFinalSeconds(callNow);
+    const seconds = serverBillableSeconds(callNow);
     const rawBilledMinutes =
       seconds >= BILLING_GRACE_SECONDS ? Math.floor(seconds / 60) : 0;
     const billedMinutes = maxPrepaidMinutes > 0

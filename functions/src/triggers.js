@@ -15,8 +15,6 @@
   stringArray,
   levelFromFollowers,
   sanitizeListenerRateForFollowers,
-  minuteKey,
-  hourKey,
   shouldSendMissedCall,
   endCallAsRejectedIfStillRinging,
 } = require("./shared");
@@ -1328,8 +1326,28 @@ exports.notifyMissedCall_v2 = functions
     const calleeId = strOr(after.calleeId).trim();
     if (!calleeId) return null;
 
-    const alreadySent = boolOr(after.missedCallPushSent, false);
-    if (alreadySent) return null;
+    if (boolOr(after.missedCallPushSent, false)) return null;
+
+    // Atomically claim the missed-call push so two near-simultaneous writes
+    // can't both pass the "already sent?" check and double-notify.
+    const claimedMissedPush = await admin.firestore().runTransaction(
+      async (tx) => {
+        const snap = await tx.get(change.after.ref);
+        if (!snap.exists) return false;
+        if (boolOr((snap.data() || {}).missedCallPushSent, false)) return false;
+        tx.set(
+          change.after.ref,
+          {
+            missedCallPushSent: true,
+            missedCallPushSentAt: admin.firestore.FieldValue.serverTimestamp(),
+            missedCallPushSentAtMs: Date.now(),
+          },
+          { merge: true }
+        );
+        return true;
+      }
+    );
+    if (!claimedMissedPush) return null;
 
     const userSnap = await admin.firestore().collection("users").doc(calleeId).get();
     const user = userSnap.data() || {};
@@ -1412,79 +1430,26 @@ exports.notifyMissedCall_v2 = functions
     return null;
   });
 
-exports.cleanupExpiredRingingCalls_v2 = functions
-  .region(REGION)
-  .pubsub.schedule("every 1 minutes")
-  .timeZone("UTC")
-  .onRun(async () => {
-    const nowMs = Date.now();
-
-    const q = await db
-      .collection("calls")
-      .where("status", "==", "ringing")
-      .limit(CLEANUP_BATCH_LIMIT)
-      .get();
-
-    if (q.empty) return null;
-
-    for (const doc of q.docs) {
-      const call = doc.data() || {};
-      const callRef = doc.ref;
-
-      const expiresAtMs = intOr(call.expiresAtMs, 0);
-      const callerId = strOr(call.callerId);
-      const calleeId = strOr(call.calleeId);
-      const channelId = strOr(call.channelId);
-
-      const invalid = !callerId || !calleeId || !channelId;
-      const expired = expiresAtMs > 0 && expiresAtMs <= nowMs;
-
-      if (!invalid && !expired) continue;
-
-      try {
-        await endCallAsRejectedIfStillRinging({
-          db,
-          callRef,
-          reason: invalid ? "invalid" : "server_timeout",
-          endedBy: "system",
-        });
-      } catch (e) {
-        console.log("cleanupExpiredRingingCalls_v2 error:", callRef.id, e);
-      }
-    }
-
-    return null;
-  });
-
 exports.cleanupCallRateLimits_v1 = functions
   .region(REGION)
   .pubsub.schedule("every 24 hours")
   .onRun(async () => {
-    const cutoffMinute = minuteKey(Date.now() - 48 * 3600 * 1000);
-    const cutoffHour = hourKey(Date.now() - 48 * 3600 * 1000);
+    // rate_limits holds one doc per user (id = uid), written by startCall_v2 with
+    // { minuteKey, minuteCount, hourKey, hourCount, updatedAt }. Prune docs not
+    // touched in 48h; they are recreated on the user's next call attempt.
+    const cutoff = Timestamp.fromMillis(Date.now() - 48 * 3600 * 1000);
 
-    const minuteSnap = await db
+    const staleSnap = await db
       .collection("rate_limits")
-      .where("type", "==", "call_start_minute")
-      .where("key", "<", cutoffMinute)
+      .where("updatedAt", "<", cutoff)
       .limit(CLEANUP_BATCH_LIMIT)
       .get();
 
-    const hourSnap = await db
-      .collection("rate_limits")
-      .where("type", "==", "call_start_hour")
-      .where("key", "<", cutoffHour)
-      .limit(CLEANUP_BATCH_LIMIT)
-      .get();
+    if (staleSnap.empty) return null;
 
     const batch = db.batch();
-
-    minuteSnap.docs.forEach((doc) => batch.delete(doc.ref));
-    hourSnap.docs.forEach((doc) => batch.delete(doc.ref));
-
-    if (!minuteSnap.empty || !hourSnap.empty) {
-      await batch.commit();
-    }
+    staleSnap.docs.forEach((doc) => batch.delete(doc.ref));
+    await batch.commit();
 
     return null;
   });

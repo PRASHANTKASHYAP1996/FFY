@@ -8,51 +8,7 @@ const {
   assertCallableAppCheck,
   callShouldHoldReserve,
 } = require("./shared");
-
-async function requireAdmin(context) {
-  if (!context.auth) {
-    throw new functions.https.HttpsError("unauthenticated", "Login required");
-  }
-
-  const uid = strOr(context.auth.uid).trim();
-  if (!uid) {
-    throw new functions.https.HttpsError("unauthenticated", "Invalid auth context");
-  }
-
-  const token = context.auth.token || {};
-  const customClaimAdmin =
-    token.admin === true ||
-    token.isAdmin === true ||
-    strOr(token.role).toLowerCase() === "admin";
-
-  if (customClaimAdmin) {
-    return {
-      uid,
-      source: "custom_claim",
-    };
-  }
-
-  const adminSnap = await admin.firestore().collection("users").doc(uid).get();
-  if (!adminSnap.exists) {
-    throw new functions.https.HttpsError("permission-denied", "Admin access required");
-  }
-
-  const adminData = adminSnap.data() || {};
-  const firestoreAdmin =
-    adminData.isAdmin === true ||
-    adminData.admin === true ||
-    strOr(adminData.role).toLowerCase() === "admin" ||
-    strOr(adminData.userRole).toLowerCase() === "admin";
-
-  if (!firestoreAdmin) {
-    throw new functions.https.HttpsError("permission-denied", "Admin access required");
-  }
-
-  return {
-    uid,
-    source: "firestore",
-  };
-}
+const { requireAdmin } = require("./admin");
 
 const ADMIN_DASHBOARD_CACHE_ROOT = "admin_dashboard_cache";
 const DASHBOARD_TTL_MS = 2 * 60 * 1000;

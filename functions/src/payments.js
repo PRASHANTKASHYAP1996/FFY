@@ -88,6 +88,33 @@ function planCancelledWithdrawalHoldRepair({
 
 exports._planCancelledWithdrawalHoldRepair = planCancelledWithdrawalHoldRepair;
 
+function sanitizeClientMetadata(
+  raw,
+  { maxKeys = 20, maxKeyLength = 40, maxValueLength = 200 } = {}
+) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out = {};
+  let count = 0;
+  for (const [key, value] of Object.entries(raw)) {
+    if (count >= maxKeys) break;
+    const safeKey = strOr(key).trim().slice(0, maxKeyLength);
+    if (!safeKey) continue;
+    if (typeof value === "string") {
+      out[safeKey] = value.slice(0, maxValueLength);
+    } else if (typeof value === "number" && Number.isFinite(value)) {
+      out[safeKey] = value;
+    } else if (typeof value === "boolean") {
+      out[safeKey] = value;
+    } else {
+      continue;
+    }
+    count += 1;
+  }
+  return out;
+}
+
+exports._sanitizeClientMetadata = sanitizeClientMetadata;
+
 function assertTestOnlyTopup({
   amount,
   currency,
@@ -395,7 +422,7 @@ exports.createTopupOrder_v1 = functions.region(REGION).https.onCall(async (data,
   const amount = intOr(data && data.amount, 0);
   const currency = safeCurrency(data && data.currency);
   const gateway = strOr(data && data.gateway, "sandbox").trim().toLowerCase();
-  const metadata = data && typeof data.metadata === "object" && data.metadata ? data.metadata : {};
+  const metadata = sanitizeClientMetadata(data && data.metadata);
   const requestRealMoney = boolOr(data && data.enableRealMoney, false);
 
   logEvent("payment.order.create.request", {
@@ -664,6 +691,25 @@ exports.failTopupOrder_v1 = functions.region(REGION).https.onCall(async (data, c
   const db = admin.firestore();
   const orderRef = paymentOrderRef(db, orderId);
 
+  // Share the verification lock so a cancel can't race a concurrent verify.
+  const failLockAcquired = await acquireExecutionLock({
+    db,
+    lockId: `topup_verify_${orderId}`,
+    lockType: "topup_verification",
+    resourceId: orderId,
+    owner: userId,
+    ttlMs: 15000,
+  });
+
+  if (!failLockAcquired) {
+    return {
+      ok: true,
+      orderId,
+      status: "verify_in_progress",
+      ...launchModeMeta({ gateway: "sandbox" }),
+    };
+  }
+
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(orderRef);
     if (!snap.exists) {
@@ -711,7 +757,10 @@ exports.failTopupOrder_v1 = functions.region(REGION).https.onCall(async (data, c
   };
 });
 
-exports.createRazorpayOrder_v1 = functions.region(REGION).https.onCall(async (data, context) => {
+exports.createRazorpayOrder_v1 = functions
+  .region(REGION)
+  .runWith({ secrets: ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"] })
+  .https.onCall(async (data, context) => {
   assertCallableAppCheck(context, "createRazorpayOrder_v1");
 
   if (!context.auth) {
@@ -721,7 +770,7 @@ exports.createRazorpayOrder_v1 = functions.region(REGION).https.onCall(async (da
   const userId = context.auth.uid;
   const amount = intOr(data && data.amount, 0);
   const currency = safeCurrency(data && data.currency);
-  const metadata = data && typeof data.metadata === "object" && data.metadata ? data.metadata : {};
+  const metadata = sanitizeClientMetadata(data && data.metadata);
 
   logEvent("payment.razorpay.order.request", {
     userId: shortLogId(userId),
@@ -819,9 +868,12 @@ exports.createRazorpayOrder_v1 = functions.region(REGION).https.onCall(async (da
     amount,
     currency,
   });
-});
+  });
 
-exports.verifyRazorpayPayment_v1 = functions.region(REGION).https.onCall(async (data, context) => {
+exports.verifyRazorpayPayment_v1 = functions
+  .region(REGION)
+  .runWith({ secrets: ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"] })
+  .https.onCall(async (data, context) => {
   assertCallableAppCheck(context, "verifyRazorpayPayment_v1");
 
   if (!context.auth) {
@@ -865,7 +917,13 @@ exports.verifyRazorpayPayment_v1 = functions.region(REGION).https.onCall(async (
     .update(`${razorpayOrderId}|${paymentId}`)
     .digest("hex");
 
-  if (expectedSignature !== signature) {
+  const expectedSignatureBuf = Buffer.from(expectedSignature, "utf8");
+  const providedSignatureBuf = Buffer.from(strOr(signature), "utf8");
+  const signatureValid =
+    expectedSignatureBuf.length === providedSignatureBuf.length &&
+    crypto.timingSafeEqual(expectedSignatureBuf, providedSignatureBuf);
+
+  if (!signatureValid) {
     logEvent("payment.razorpay.verify.failure", {
       userId: shortLogId(userId),
       orderId,
@@ -1076,7 +1134,7 @@ exports.verifyRazorpayPayment_v1 = functions.region(REGION).https.onCall(async (
     testMode: true,
     ...launchModeMeta({ gateway: "razorpay" }),
   };
-});
+  });
 
 exports.requestWithdrawal_v1 = functions.region(REGION).https.onCall(async (data, context) => {
   assertCallableAppCheck(context, "requestWithdrawal_v1");

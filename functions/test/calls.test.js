@@ -39,6 +39,7 @@ const {
   evaluateAgoraTokenConfig,
   assertAgoraTokenConfigReady,
   normalizedRejectedEndedReason,
+  serverBillableSeconds,
 } = require("../src/shared");
 
 function makeDirectionalPair({ speakerId = "userA", listenerId = "userB" } = {}) {
@@ -1396,4 +1397,52 @@ test("call available balance excludes pending withdrawal holds", () => {
     reservedCredits: 10,
     pendingWithdrawalCredits: 20,
   }), 0);
+});
+
+test("serverBillableSeconds derives duration from server timestamps, ignoring client endedSeconds", () => {
+  // Caller under-reports endedSeconds=10, but talked for 120s per server clocks.
+  assert.equal(
+    serverBillableSeconds({
+      billableStartedAtMs: 1_000_000,
+      endedAtMs: 1_120_000,
+      endedSeconds: 10,
+    }),
+    120
+  );
+});
+
+test("serverBillableSeconds bills the full window when the prepaid cron ends with endedSeconds=0", () => {
+  // cleanupAcceptedCreditLimit_v2 writes endedSeconds:0 but a real endedAtMs.
+  assert.equal(
+    serverBillableSeconds({
+      billableStartedAtMs: 2_000_000,
+      endedAtMs: 2_300_000,
+      endedSeconds: 0,
+      endedReason: "credit_limit_reached",
+    }),
+    300
+  );
+});
+
+test("serverBillableSeconds returns 0 when the call never became billable", () => {
+  assert.equal(
+    serverBillableSeconds({
+      billableStartedAtMs: 0,
+      bothJoinedAtMs: 0,
+      endedAtMs: 5_000_000,
+      endedSeconds: 999,
+    }),
+    0
+  );
+});
+
+test("serverBillableSeconds returns 0 for non-positive elapsed (clock skew guard)", () => {
+  assert.equal(
+    serverBillableSeconds({
+      billableStartedAtMs: 3_000_000,
+      endedAtMs: 2_999_000,
+      endedSeconds: 50,
+    }),
+    0
+  );
 });

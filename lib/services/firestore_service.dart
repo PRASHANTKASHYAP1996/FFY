@@ -2,8 +2,48 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import '../core/constants/firestore_paths.dart';
+import '../core/constants/call_timing.dart';
+import 'app_log.dart';
+import 'call_latency_tracker.dart';
+
+class CallStartResult {
+  const CallStartResult({
+    required this.callRef,
+    required this.channelId,
+    required this.agoraUid,
+    required this.agoraToken,
+  });
+
+  final DocumentReference<Map<String, dynamic>> callRef;
+  final String channelId;
+  final int agoraUid;
+  final String agoraToken;
+
+  bool get canOpenWaitingScreen => channelId.trim().isNotEmpty;
+}
+
+class CallAcceptResult {
+  const CallAcceptResult({
+    required this.callRef,
+    required this.channelId,
+    required this.agoraUid,
+    required this.agoraToken,
+    required this.status,
+    required this.alreadyFinal,
+  });
+
+  final DocumentReference<Map<String, dynamic>> callRef;
+  final String channelId;
+  final int agoraUid;
+  final String agoraToken;
+  final String status;
+  final bool alreadyFinal;
+
+  bool get canOpenVoiceScreen => channelId.trim().isNotEmpty;
+}
 
 class FirestoreService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -27,15 +67,37 @@ class FirestoreService {
   static const List<int> rateOptions = <int>[5, 10, 20, 50, 100];
   static const int platformPercent = 20;
 
-  static const int ringingTimeoutSeconds = 45;
+  static const int ringingTimeoutSeconds =
+      CallTiming.incomingRingTimeoutSeconds;
   static const int acceptedStaleTimeoutMinutes = 5;
-  static const int defaultStartingCredits = 500;
+  static const int defaultStartingCredits = 0;
 
   static const int _cleanupPageSize = 20;
   static const Duration _cleanupMyStaleCallsThrottle = Duration(seconds: 12);
 
   static Future<void>? _cleanupMyStaleCallsInFlight;
   static DateTime? _lastCleanupMyStaleCallsAt;
+
+  static String _newFunctionTraceId(String functionName) {
+    return AppLog.makeTraceId('fn.$functionName');
+  }
+
+  static Map<String, dynamic> _functionTracePayload(String traceId) {
+    return AppLog.cloudFunctionTracePayload(traceId);
+  }
+
+  static void _traceFunction(
+    String eventName,
+    String traceId, {
+    Map<String, Object?> fields = const <String, Object?>{},
+  }) {
+    AppLog.trace(
+      eventName,
+      area: 'function',
+      traceId: traceId,
+      fields: fields,
+    );
+  }
 
   static String uid() {
     final current = FirebaseAuth.instance.currentUser;
@@ -76,6 +138,54 @@ class FirestoreService {
     if (value is String) return value.trim();
     if (value == null) return fallback;
     return value.toString().trim();
+  }
+
+  static const Set<String> _safeFunctionFailureReasons = <String>{
+    'insufficient_credits',
+    'app_check_failed',
+    'self_only_chat_mode',
+    'peer_only_chat_mode',
+    'call_access_not_accepted',
+    'caller_not_speaker',
+    'listener_mismatch',
+    'active_call_exists',
+    'peer_busy',
+    'caller_busy',
+    'wallet_reserve_failed',
+    'server_config_missing',
+    'unknown_precondition',
+  };
+
+  static String functionFailureReason(FirebaseFunctionsException error) {
+    final details = error.details;
+    if (details is Map) {
+      final reason = _asString(details['reason']);
+      if (_safeFunctionFailureReasons.contains(reason)) return reason;
+    }
+
+    final message = (error.message ?? '').trim();
+    if (_safeFunctionFailureReasons.contains(message)) return message;
+    if (message == 'App Check token is required.') return 'app_check_failed';
+    if (message.startsWith('Insufficient credits')) {
+      return 'insufficient_credits';
+    }
+    if (message == 'You already have an active call') {
+      return 'active_call_exists';
+    }
+    if (message == 'Listener is busy') return 'peer_busy';
+    if (message == 'REQUEST_NOT_APPROVED' ||
+        message == 'Call is not allowed for this chat yet.' ||
+        message == 'CALL_NOT_ALLOWED_FOR_DIRECTION') {
+      return 'call_access_not_accepted';
+    }
+    if (message == 'CALL_APPROVAL_BELONGS_TO_OTHER_DIRECTION') {
+      return 'listener_mismatch';
+    }
+    if (message.startsWith('Agora server configuration is incomplete') ||
+        message == 'server_config_missing') {
+      return 'server_config_missing';
+    }
+    return '';
   }
 
   static int _timestampMs(dynamic value) {
@@ -138,8 +248,7 @@ class FirestoreService {
 
     if (expiresAtMs > 0 && nowMs > expiresAtMs) return true;
 
-    if (createdAtMs > 0 &&
-        nowMs - createdAtMs > ringingTimeoutSeconds * 1000) {
+    if (createdAtMs > 0 && nowMs - createdAtMs > ringingTimeoutSeconds * 1000) {
       return true;
     }
 
@@ -175,16 +284,37 @@ class FirestoreService {
     return callerId == userId || calleeId == userId;
   }
 
+  static Future<void> _runUserWrite({
+    required String area,
+    required Future<void> Function() write,
+  }) async {
+    try {
+      await write();
+    } on FirebaseException catch (e) {
+      final reason =
+          e.code == 'permission-denied' ? 'permission_denied' : 'failed';
+      debugPrint('user_write_failed area=$area reason=$reason');
+      rethrow;
+    } catch (_) {
+      debugPrint('user_write_failed area=$area reason=failed');
+      rethrow;
+    }
+  }
+
   static Future<void> _touchMe({
+    String area = 'profile',
     Map<String, dynamic> extra = const <String, dynamic>{},
   }) async {
     final ref = safeMeRefOrNull();
     if (ref == null) return;
 
-    await ref.set({
-      ...extra,
-      FirestorePaths.fieldLastSeen: FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    await _runUserWrite(
+      area: area,
+      write: () => ref.set({
+        ...extra,
+        FirestorePaths.fieldLastSeen: FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true)),
+    );
   }
 
   static int levelFromFollowers(int followers) {
@@ -242,53 +372,69 @@ class FirestoreService {
       const int defaultFollowers = 0;
       const int defaultRate = 5;
 
-      await ref.set({
-        FirestorePaths.fieldUid: currentUser.uid,
-        FirestorePaths.fieldEmail: safeEmail,
-        FirestorePaths.fieldDisplayName: safeName,
-        FirestorePaths.fieldCredits: defaultStartingCredits,
-        FirestorePaths.fieldReservedCredits: 0,
-        FirestorePaths.fieldEarningsCredits: 0,
-        FirestorePaths.fieldPlatformRevenueCredits: 0,
-        FirestorePaths.fieldPhotoURL: '',
-        FirestorePaths.fieldBio: '',
-        FirestorePaths.fieldTopics: <String>[],
-        FirestorePaths.fieldLanguages: <String>[],
-        FirestorePaths.fieldGender: '',
-        FirestorePaths.fieldCity: '',
-        FirestorePaths.fieldState: '',
-        FirestorePaths.fieldCountry: '',
-        FirestorePaths.fieldIsListener: true,
-        FirestorePaths.fieldIsAvailable: true,
-        FirestorePaths.fieldFollowersCount: defaultFollowers,
-        FirestorePaths.fieldLevel: levelFromFollowers(defaultFollowers),
-        FirestorePaths.fieldListenerRate: defaultRate,
-        FirestorePaths.fieldFollowing: <String>[],
-        FirestorePaths.fieldBlocked: <String>[],
-        FirestorePaths.fieldFcmTokens: <String>[],
-        FirestorePaths.fieldFavoriteListeners: <String>[],
-        FirestorePaths.fieldActiveCallId: '',
-        FirestorePaths.fieldRatingAvg: 0.0,
-        FirestorePaths.fieldRatingCount: 0,
-        FirestorePaths.fieldRatingSum: 0,
-        FirestorePaths.fieldCreatedAt: FieldValue.serverTimestamp(),
-        FirestorePaths.fieldLastSeen: FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      await _runUserWrite(
+        area: 'profile',
+        write: () => ref.set({
+          FirestorePaths.fieldUid: currentUser.uid,
+          FirestorePaths.fieldEmail: safeEmail,
+          FirestorePaths.fieldDisplayName: safeName,
+          FirestorePaths.fieldCredits: defaultStartingCredits,
+          FirestorePaths.fieldReservedCredits: 0,
+          FirestorePaths.fieldEarningsCredits: 0,
+          FirestorePaths.fieldPlatformRevenueCredits: 0,
+          FirestorePaths.fieldPhotoURL: '',
+          FirestorePaths.fieldBio: '',
+          FirestorePaths.fieldTopics: <String>[],
+          FirestorePaths.fieldLanguages: <String>[],
+          FirestorePaths.fieldGender: '',
+          FirestorePaths.fieldCity: '',
+          FirestorePaths.fieldState: '',
+          FirestorePaths.fieldCountry: '',
+          FirestorePaths.fieldIsListener: false,
+          FirestorePaths.fieldIsAvailable: false,
+          FirestorePaths.fieldIsOnCall: false,
+          FirestorePaths.fieldCallAvailability: {
+            FirestorePaths.fieldOnlyChatMode: false,
+            FirestorePaths.fieldUpdatedAt: FieldValue.serverTimestamp(),
+            FirestorePaths.fieldUpdatedBy: currentUser.uid,
+          },
+          FirestorePaths.fieldFollowersCount: defaultFollowers,
+          FirestorePaths.fieldLevel: levelFromFollowers(defaultFollowers),
+          FirestorePaths.fieldListenerRate: defaultRate,
+          FirestorePaths.fieldFollowing: <String>[],
+          FirestorePaths.fieldBlocked: <String>[],
+          FirestorePaths.fieldFcmTokens: <String>[],
+          FirestorePaths.fieldFavoriteListeners: <String>[],
+          FirestorePaths.fieldActiveCallId: '',
+          FirestorePaths.fieldRatingAvg: 0.0,
+          FirestorePaths.fieldRatingCount: 0,
+          FirestorePaths.fieldRatingSum: 0,
+          FirestorePaths.fieldCreatedAt: FieldValue.serverTimestamp(),
+          FirestorePaths.fieldLastSeen: FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true)),
+      );
       return;
     }
 
     final data = snap.data() ?? <String, dynamic>{};
-    final patch = <String, dynamic>{
-      FirestorePaths.fieldLastSeen: FieldValue.serverTimestamp(),
-    };
+    final patch = <String, dynamic>{};
 
-    final existingDisplayName = _asString(data[FirestorePaths.fieldDisplayName]);
+    final existingDisplayName =
+        _asString(data[FirestorePaths.fieldDisplayName]);
     if (existingDisplayName.isEmpty && safeName.isNotEmpty) {
       patch[FirestorePaths.fieldDisplayName] = safeName;
     }
 
     if (data[FirestorePaths.fieldFavoriteListeners] is! List) {
       patch[FirestorePaths.fieldFavoriteListeners] = <String>[];
+    }
+
+    if (data[FirestorePaths.fieldTopics] is! List) {
+      patch[FirestorePaths.fieldTopics] = <String>[];
+    }
+
+    if (data[FirestorePaths.fieldLanguages] is! List) {
+      patch[FirestorePaths.fieldLanguages] = <String>[];
     }
 
     if (data[FirestorePaths.fieldFollowing] is! List) {
@@ -316,37 +462,97 @@ class FirestoreService {
       patch[FirestorePaths.fieldCountry] = '';
     }
 
-    await ref.set(patch, SetOptions(merge: true));
+    if (patch.isEmpty) return;
+
+    patch[FirestorePaths.fieldLastSeen] = FieldValue.serverTimestamp();
+    await _runUserWrite(
+      area: 'profile',
+      write: () => ref.set(patch, SetOptions(merge: true)),
+    );
+  }
+
+  static Future<void> addFcmTokenForUser({
+    required String uid,
+    required String token,
+  }) async {
+    final safeUid = uid.trim();
+    final safeToken = token.trim();
+
+    if (safeUid.isEmpty || safeToken.isEmpty) return;
+
+    final ref = users.doc(safeUid);
+    final snap = await ref.get();
+    if (!snap.exists) return;
+
+    // Keep only the newest N tokens. A blind arrayUnion can grow the list past
+    // the Firestore-rules cap (max 20), after which every new-device
+    // registration would be silently rejected. Cap well under that limit.
+    const maxTokens = 10;
+    final raw = snap.data()?[FirestorePaths.fieldFcmTokens];
+    final tokens = raw is List
+        ? raw
+            .whereType<String>()
+            .map((t) => t.trim())
+            .where((t) => t.isNotEmpty)
+            .toList()
+        : <String>[];
+    tokens.removeWhere((t) => t == safeToken);
+    tokens.add(safeToken);
+    final capped = tokens.length > maxTokens
+        ? tokens.sublist(tokens.length - maxTokens)
+        : tokens;
+
+    await _runUserWrite(
+      area: 'fcm',
+      write: () => ref.update({
+        FirestorePaths.fieldFcmTokens: capped,
+        FirestorePaths.fieldLastSeen: FieldValue.serverTimestamp(),
+      }),
+    );
   }
 
   static Future<void> addMyFcmToken(String token) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final uid = user.uid.trim();
+    final safeEmail = user.email?.trim() ?? '';
+    final safeDisplayName = user.displayName?.trim();
+
+    await ensureProfile(
+      email: safeEmail,
+      displayName: safeDisplayName?.isEmpty == true ? null : safeDisplayName,
+    );
+
+    await addFcmTokenForUser(uid: user.uid, token: token);
+  }
+
+  static Future<void> removeFcmTokenForUser({
+    required String uid,
+    required String token,
+  }) async {
+    final safeUid = uid.trim();
     final safeToken = token.trim();
 
-    if (uid.isEmpty || safeToken.isEmpty) return;
+    if (safeUid.isEmpty || safeToken.isEmpty) return;
 
-    await users.doc(uid).set({
-      FirestorePaths.fieldFcmTokens: FieldValue.arrayUnion([safeToken]),
-      FirestorePaths.fieldLastSeen: FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    final ref = users.doc(safeUid);
+    final snap = await ref.get();
+    if (!snap.exists) return;
+
+    await _runUserWrite(
+      area: 'fcm',
+      write: () => ref.update({
+        FirestorePaths.fieldFcmTokens: FieldValue.arrayRemove([safeToken]),
+        FirestorePaths.fieldLastSeen: FieldValue.serverTimestamp(),
+      }),
+    );
   }
 
   static Future<void> removeMyFcmToken(String token) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final uid = user.uid.trim();
-    final safeToken = token.trim();
-
-    if (uid.isEmpty || safeToken.isEmpty) return;
-
-    await users.doc(uid).set({
-      FirestorePaths.fieldFcmTokens: FieldValue.arrayRemove([safeToken]),
-      FirestorePaths.fieldLastSeen: FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    await removeFcmTokenForUser(uid: user.uid, token: token);
   }
 
   static Future<void> setDisplayName(String value) async {
@@ -368,21 +574,45 @@ class FirestoreService {
     final ref = safeMeRefOrNull();
     if (ref == null) return;
 
-    await ref.set({
-      FirestorePaths.fieldIsListener: enabled,
-      FirestorePaths.fieldIsAvailable: enabled,
-      FirestorePaths.fieldLastSeen: FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    await _runUserWrite(
+      area: 'profile',
+      write: () => ref.set({
+        FirestorePaths.fieldIsListener: enabled,
+        FirestorePaths.fieldIsAvailable: enabled,
+        FirestorePaths.fieldLastSeen: FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true)),
+    );
   }
 
   static Future<void> setAvailability(bool available) async {
     final ref = safeMeRefOrNull();
     if (ref == null) return;
 
-    await ref.set({
-      FirestorePaths.fieldIsAvailable: available,
-      FirestorePaths.fieldLastSeen: FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    await _runUserWrite(
+      area: 'presence',
+      write: () => ref.set({
+        FirestorePaths.fieldIsAvailable: available,
+        FirestorePaths.fieldLastSeen: FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true)),
+    );
+  }
+
+  static Future<void> setOnlyChatMode(bool enabled) async {
+    final ref = safeMeRefOrNull();
+    final uid = safeUidOrNull();
+    if (ref == null || uid == null) return;
+    final now = Timestamp.now();
+
+    await _runUserWrite(
+      area: 'callAvailability',
+      write: () => ref.update({
+        FirestorePaths.fieldCallAvailability: {
+          FirestorePaths.fieldOnlyChatMode: enabled,
+          FirestorePaths.fieldUpdatedAt: now,
+          FirestorePaths.fieldUpdatedBy: uid,
+        },
+      }),
+    );
   }
 
   static Future<void> setListenerRate(int visibleRate) async {
@@ -399,10 +629,13 @@ class FirestoreService {
       throw StateError('Selected rate is not allowed for current level.');
     }
 
-    await ref.set({
-      FirestorePaths.fieldListenerRate: visibleRate,
-      FirestorePaths.fieldLastSeen: FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    await _runUserWrite(
+      area: 'profile',
+      write: () => ref.set({
+        FirestorePaths.fieldListenerRate: visibleRate,
+        FirestorePaths.fieldLastSeen: FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true)),
+    );
   }
 
   static Future<void> followUser(String userId) async {
@@ -488,7 +721,7 @@ class FirestoreService {
     );
   }
 
-  static Future<DocumentReference<Map<String, dynamic>>?> createCallToListener({
+  static Future<CallStartResult?> createCallToListener({
     required String listenerId,
   }) async {
     final myUid = safeUidOrNull();
@@ -496,17 +729,46 @@ class FirestoreService {
 
     final safeListenerId = listenerId.trim();
     if (safeListenerId.isEmpty || safeListenerId == myUid) return null;
+    final pendingTraceKey = CallLatencyTracker.outgoingPendingKey(
+      safeListenerId,
+    );
+    var pendingRegistered = false;
+    final traceId = _newFunctionTraceId('startCall_v2');
 
     try {
+      pendingRegistered = CallLatencyTracker.registerPending(pendingTraceKey);
+      if (!pendingRegistered) {
+        return null;
+      }
       await cleanupMyStaleCalls();
+      CallLatencyTracker.trace(
+        'call.tap_call_now',
+        callId: pendingTraceKey,
+        actorRole: 'caller',
+        extra: <String, Object?>{'listenerId': safeListenerId},
+      );
+      CallLatencyTracker.trace(
+        'call.start_callable_begin',
+        callId: pendingTraceKey,
+        actorRole: 'caller',
+        extra: <String, Object?>{'traceId': traceId},
+      );
+      _traceFunction(
+        'function.startCall_v2.begin',
+        traceId,
+        fields: <String, Object?>{'listenerId': safeListenerId},
+      );
 
-      final result = await fn()
-          .httpsCallable('startCall_v2')
-          .call(<String, dynamic>{'listenerId': safeListenerId});
+      final result = await fn().httpsCallable('startCall_v2').call(
+        <String, dynamic>{
+          'listenerId': safeListenerId,
+          ..._functionTracePayload(traceId),
+        },
+      );
 
       final data = result.data;
       if (data is! Map) {
-        debugPrint('startCall_v2 invalid response: $data');
+        debugPrint('startCall_v2 invalid response type=${data.runtimeType}');
         throw StateError('startCall_v2 returned invalid response.');
       }
 
@@ -516,17 +778,111 @@ class FirestoreService {
         debugPrint('startCall_v2 returned empty callId');
         throw StateError('startCall_v2 returned empty callId.');
       }
+      CallLatencyTracker.attachPending(
+        pendingKey: pendingTraceKey,
+        callId: callId,
+      );
 
-      return calls.doc(callId);
+      final channelId = data[FirestorePaths.fieldChannelId] is String
+          ? (data[FirestorePaths.fieldChannelId] as String).trim()
+          : '';
+      final callerAgoraUid = _asInt(data['callerAgoraUid']);
+      final agoraUid = _asInt(
+        data[FirestorePaths.fieldAgoraUid],
+        fallback: callerAgoraUid,
+      );
+      final agoraToken = data[FirestorePaths.fieldAgoraToken] is String
+          ? (data[FirestorePaths.fieldAgoraToken] as String).trim()
+          : '';
+      CallLatencyTracker.trace(
+        'call.uid_resolved',
+        callId: callId,
+        actorRole: 'caller',
+        extra: <String, Object?>{
+          'uidPresent': agoraUid > 0,
+          'agoraUidPresent': _asInt(data[FirestorePaths.fieldAgoraUid]) > 0,
+          'callerAgoraUidPresent': callerAgoraUid > 0,
+        },
+      );
+      CallLatencyTracker.trace(
+        'call.start_callable_success',
+        callId: callId,
+        actorRole: 'caller',
+        extra: <String, Object?>{
+          'traceId': traceId,
+          'channelReady': channelId.isNotEmpty,
+          'tokenPresent': agoraToken.isNotEmpty,
+        },
+      );
+      _traceFunction(
+        'function.startCall_v2.success',
+        traceId,
+        fields: <String, Object?>{
+          'callId': callId,
+          'channelReady': channelId.isNotEmpty,
+          'tokenPresent': agoraToken.isNotEmpty,
+        },
+      );
+
+      return CallStartResult(
+        callRef: calls.doc(callId),
+        channelId: channelId,
+        agoraUid: agoraUid,
+        agoraToken: agoraToken,
+      );
     } on FirebaseFunctionsException catch (e) {
+      final failureReason = functionFailureReason(e);
+      CallLatencyTracker.trace(
+        'call.start_callable_failed',
+        callId: pendingTraceKey,
+        actorRole: 'caller',
+        extra: <String, Object?>{
+          'traceId': traceId,
+          'code': e.code,
+          if (failureReason.isNotEmpty) 'failureReason': failureReason,
+        },
+      );
+      _traceFunction(
+        'function.startCall_v2.failed',
+        traceId,
+        fields: <String, Object?>{
+          'callId': pendingTraceKey,
+          'code': e.code,
+          if (failureReason.isNotEmpty) 'failureReason': failureReason,
+        },
+      );
       debugPrint(
         'startCall_v2 failed: '
-        'code=${e.code} message=${e.message} details=${e.details}',
+        'code=${e.code} '
+        'failureReason=${failureReason.isEmpty ? 'unknown' : failureReason} '
+        'messagePresent=${(e.message ?? '').trim().isNotEmpty}',
       );
       rethrow;
     } catch (e) {
-      debugPrint('startCall_v2 failed: $e');
+      final debugDetails = _compactErrorDebugDetails(e);
+      CallLatencyTracker.trace(
+        'call.start_callable_failed',
+        callId: pendingTraceKey,
+        actorRole: 'caller',
+        extra: <String, Object?>{
+          'traceId': traceId,
+          ...debugDetails,
+        },
+      );
+      _traceFunction(
+        'function.startCall_v2.failed',
+        traceId,
+        fields: <String, Object?>{
+          'callId': pendingTraceKey,
+          ...debugDetails,
+        },
+      );
+      debugPrint('startCall_v2 failed: ${_formatErrorDebugDetails(e)}');
       rethrow;
+    } finally {
+      if (pendingRegistered) {
+        CallLatencyTracker.clearPending(pendingTraceKey);
+      }
     }
   }
 
@@ -549,10 +905,48 @@ class FirestoreService {
 
     final safeReason = (rejectedReason ?? '').trim();
 
+    final traceId = _newFunctionTraceId('rejectIncomingCall_v1');
+    _traceFunction(
+      'function.rejectIncomingCall_v1.begin',
+      traceId,
+      fields: <String, Object?>{'callId': callRef.id, 'reason': safeReason},
+    );
     await fn().httpsCallable('rejectIncomingCall_v1').call({
       'callId': callRef.id,
       'rejectedReason': safeReason,
+      ..._functionTracePayload(traceId),
     });
+    _traceFunction(
+      'function.rejectIncomingCall_v1.success',
+      traceId,
+      fields: <String, Object?>{'callId': callRef.id},
+    );
+  }
+
+  static Future<void> rejectCallById(
+    String callId, {
+    String? rejectedReason,
+  }) async {
+    final safeCallId = callId.trim();
+    if (safeCallId.isEmpty || safeUidOrNull() == null) return;
+
+    final safeReason = (rejectedReason ?? '').trim();
+    final traceId = _newFunctionTraceId('rejectIncomingCall_v1');
+    _traceFunction(
+      'function.rejectIncomingCall_v1.begin',
+      traceId,
+      fields: <String, Object?>{'callId': safeCallId, 'reason': safeReason},
+    );
+    await fn().httpsCallable('rejectIncomingCall_v1').call({
+      'callId': safeCallId,
+      'rejectedReason': safeReason,
+      ..._functionTracePayload(traceId),
+    });
+    _traceFunction(
+      'function.rejectIncomingCall_v1.success',
+      traceId,
+      fields: <String, Object?>{'callId': safeCallId},
+    );
   }
 
   static Future<void> cancelOutgoingCall({
@@ -575,40 +969,172 @@ class FirestoreService {
 
     final safeReason = reason.trim();
 
+    final traceId = _newFunctionTraceId('cancelOutgoingCall_v1');
+    _traceFunction(
+      'function.cancelOutgoingCall_v1.begin',
+      traceId,
+      fields: <String, Object?>{'callId': callRef.id, 'reason': safeReason},
+    );
     await fn().httpsCallable('cancelOutgoingCall_v1').call({
       'callId': callRef.id,
       'reason': safeReason,
+      ..._functionTracePayload(traceId),
     });
+    _traceFunction(
+      'function.cancelOutgoingCall_v1.success',
+      traceId,
+      fields: <String, Object?>{'callId': callRef.id},
+    );
   }
 
-  static Future<void> acceptCall(
+  static Future<CallAcceptResult?> acceptCall(
     DocumentReference<Map<String, dynamic>> callRef,
   ) async {
     final myUid = safeUidOrNull();
-    if (myUid == null) return;
+    if (myUid == null) return null;
 
     final snap = await _loadCall(callRef);
-    if (!snap.exists) return;
+    if (!snap.exists) return null;
 
     final call = snap.data() ?? <String, dynamic>{};
     final calleeId = _asString(call[FirestorePaths.fieldCalleeId]);
     final status = _asString(call[FirestorePaths.fieldStatus]);
 
-    if (_isFinalCallStatus(status)) return;
-    if (calleeId != myUid) return;
-    if (status != FirestorePaths.statusRinging) return;
+    if (_isFinalCallStatus(status)) return null;
+    if (calleeId != myUid) return null;
+    if (status != FirestorePaths.statusRinging) return null;
 
     if (_isExpiredRingingCall(call)) {
       await rejectCall(
         callRef,
         rejectedReason: FirestorePaths.reasonTimeout,
       );
-      return;
+      return null;
     }
 
-    await fn().httpsCallable('acceptIncomingCall_v1').call({
+    CallLatencyTracker.trace(
+      'call.accept_callable_begin',
+      callId: callRef.id,
+      actorRole: 'callee',
+    );
+    final traceId = _newFunctionTraceId('acceptIncomingCall_v1');
+    _traceFunction(
+      'function.acceptIncomingCall_v1.begin',
+      traceId,
+      fields: <String, Object?>{'callId': callRef.id},
+    );
+    final result = await fn().httpsCallable('acceptIncomingCall_v1').call({
       'callId': callRef.id,
+      ..._functionTracePayload(traceId),
     });
+    _traceFunction(
+      'function.acceptIncomingCall_v1.success',
+      traceId,
+      fields: <String, Object?>{'callId': callRef.id},
+    );
+    return _acceptResultFromCallableData(callRef, result.data);
+  }
+
+  static Future<CallAcceptResult?> acceptCallById(String callId) async {
+    final safeCallId = callId.trim();
+    if (safeCallId.isEmpty || safeUidOrNull() == null) return null;
+
+    final callRef = calls.doc(safeCallId);
+    CallLatencyTracker.trace(
+      'call.accept_callable_begin',
+      callId: callRef.id,
+      actorRole: 'callee',
+    );
+    final traceId = _newFunctionTraceId('acceptIncomingCall_v1');
+    _traceFunction(
+      'function.acceptIncomingCall_v1.begin',
+      traceId,
+      fields: <String, Object?>{'callId': callRef.id},
+    );
+    final result = await fn().httpsCallable('acceptIncomingCall_v1').call({
+      'callId': callRef.id,
+      ..._functionTracePayload(traceId),
+    });
+    _traceFunction(
+      'function.acceptIncomingCall_v1.success',
+      traceId,
+      fields: <String, Object?>{'callId': callRef.id},
+    );
+    return _acceptResultFromCallableData(callRef, result.data);
+  }
+
+  static CallAcceptResult? _acceptResultFromCallableData(
+    DocumentReference<Map<String, dynamic>> callRef,
+    Object? data,
+  ) {
+    if (data is! Map) return null;
+
+    final channelId = data[FirestorePaths.fieldChannelId] is String
+        ? (data[FirestorePaths.fieldChannelId] as String).trim()
+        : '';
+    final calleeAgoraUid = _asInt(data['calleeAgoraUid']);
+    final agoraUid = _asInt(
+      data[FirestorePaths.fieldAgoraUid],
+      fallback: calleeAgoraUid,
+    );
+    final agoraToken = data[FirestorePaths.fieldAgoraToken] is String
+        ? (data[FirestorePaths.fieldAgoraToken] as String).trim()
+        : '';
+    final responseStatus = data[FirestorePaths.fieldStatus] is String
+        ? (data[FirestorePaths.fieldStatus] as String).trim()
+        : '';
+    final alreadyFinal = data['alreadyFinal'] == true;
+    CallLatencyTracker.trace(
+      'call.uid_resolved',
+      callId: callRef.id,
+      actorRole: 'callee',
+      extra: <String, Object?>{
+        'uidPresent': agoraUid > 0,
+        'agoraUidPresent': _asInt(data[FirestorePaths.fieldAgoraUid]) > 0,
+        'calleeAgoraUidPresent': calleeAgoraUid > 0,
+      },
+    );
+    CallLatencyTracker.trace(
+      'call.accept_callable_success',
+      callId: callRef.id,
+      actorRole: 'callee',
+      extra: <String, Object?>{
+        'status': responseStatus,
+        'tokenPresent': agoraToken.isNotEmpty,
+      },
+    );
+
+    return CallAcceptResult(
+      callRef: callRef,
+      channelId: channelId,
+      agoraUid: agoraUid,
+      agoraToken: agoraToken,
+      status: responseStatus,
+      alreadyFinal: alreadyFinal,
+    );
+  }
+
+  static Future<void> markCallJoined({
+    required String callId,
+  }) async {
+    final safeCallId = callId.trim();
+    if (safeCallId.isEmpty || safeUidOrNull() == null) return;
+
+    final traceId = _newFunctionTraceId('markCallJoined_v1');
+    _traceFunction(
+      'function.markCallJoined_v1.begin',
+      traceId,
+      fields: <String, Object?>{'callId': safeCallId},
+    );
+    await fn().httpsCallable('markCallJoined_v1').call({
+      'callId': safeCallId,
+      ..._functionTracePayload(traceId),
+    });
+    _traceFunction(
+      'function.markCallJoined_v1.success',
+      traceId,
+      fields: <String, Object?>{'callId': safeCallId},
+    );
   }
 
   static Future<void> endCallWithBilling({
@@ -631,11 +1157,27 @@ class FirestoreService {
 
     final safeReason = (reason ?? '').trim();
 
+    final traceId = _newFunctionTraceId('endCallAuthoritative_v1');
+    _traceFunction(
+      'function.endCallAuthoritative_v1.begin',
+      traceId,
+      fields: <String, Object?>{
+        'callId': callRef.id,
+        'reason': safeReason,
+        'endedSeconds': _safeNonNegativeSeconds(seconds),
+      },
+    );
     await fn().httpsCallable('endCallAuthoritative_v1').call({
       'callId': callRef.id,
       'reason': safeReason,
       'endedSeconds': _safeNonNegativeSeconds(seconds),
+      ..._functionTracePayload(traceId),
     });
+    _traceFunction(
+      'function.endCallAuthoritative_v1.success',
+      traceId,
+      fields: <String, Object?>{'callId': callRef.id},
+    );
   }
 
   static Future<void> endCallNoCharge({
@@ -666,24 +1208,70 @@ class FirestoreService {
     if (status == FirestorePaths.statusRinging) {
       final callerId = _asString(call[FirestorePaths.fieldCallerId]);
       if (callerId == currentUid) {
+        final traceId = _newFunctionTraceId('cancelOutgoingCall_v1');
+        _traceFunction(
+          'function.cancelOutgoingCall_v1.begin',
+          traceId,
+          fields: <String, Object?>{
+            'callId': callRef.id,
+            'reason': safeReason,
+          },
+        );
         await fn().httpsCallable('cancelOutgoingCall_v1').call({
           'callId': callRef.id,
           'reason': safeReason,
+          ..._functionTracePayload(traceId),
         });
+        _traceFunction(
+          'function.cancelOutgoingCall_v1.success',
+          traceId,
+          fields: <String, Object?>{'callId': callRef.id},
+        );
       } else {
+        final traceId = _newFunctionTraceId('rejectIncomingCall_v1');
+        _traceFunction(
+          'function.rejectIncomingCall_v1.begin',
+          traceId,
+          fields: <String, Object?>{
+            'callId': callRef.id,
+            'reason': safeReason,
+          },
+        );
         await fn().httpsCallable('rejectIncomingCall_v1').call({
           'callId': callRef.id,
           'rejectedReason': safeReason,
+          ..._functionTracePayload(traceId),
         });
+        _traceFunction(
+          'function.rejectIncomingCall_v1.success',
+          traceId,
+          fields: <String, Object?>{'callId': callRef.id},
+        );
       }
       return;
     }
 
+    final traceId = _newFunctionTraceId('endCallAuthoritative_v1');
+    _traceFunction(
+      'function.endCallAuthoritative_v1.begin',
+      traceId,
+      fields: <String, Object?>{
+        'callId': callRef.id,
+        'reason': safeReason,
+        'endedSeconds': 0,
+      },
+    );
     await fn().httpsCallable('endCallAuthoritative_v1').call({
       'callId': callRef.id,
       'reason': safeReason,
       'endedSeconds': 0,
+      ..._functionTracePayload(traceId),
     });
+    _traceFunction(
+      'function.endCallAuthoritative_v1.success',
+      traceId,
+      fields: <String, Object?>{'callId': callRef.id},
+    );
   }
 
   static Future<void> claimMyListenerPayouts() async {
@@ -720,8 +1308,7 @@ class FirestoreService {
 
     final callerId = _asString(call[FirestorePaths.fieldCallerId]);
     final calleeId = _asString(call[FirestorePaths.fieldCalleeId]);
-    final expectedReviewedUserId =
-        callerId == reviewerId ? calleeId : callerId;
+    final expectedReviewedUserId = callerId == reviewerId ? calleeId : callerId;
 
     if (expectedReviewedUserId.isEmpty) return false;
     if (expectedReviewedUserId != safeReviewedUserId) return false;
@@ -974,5 +1561,33 @@ class FirestoreService {
     await fn().httpsCallable('cancelMyWithdrawal_v1').call({
       'requestId': requestId,
     });
+  }
+
+  static Map<String, Object?> _compactErrorDebugDetails(Object error) {
+    if (error is PlatformException) {
+      return <String, Object?>{
+        'errorType': 'PlatformException',
+        'platformCode': error.code,
+        'messagePresent': (error.message ?? '').trim().isNotEmpty,
+        'detailsPresent': error.details != null,
+      };
+    }
+
+    if (error is FirebaseException) {
+      return <String, Object?>{
+        'errorType': error.runtimeType.toString(),
+        'firebaseCode': error.code,
+        'messagePresent': (error.message ?? '').trim().isNotEmpty,
+      };
+    }
+
+    return <String, Object?>{'errorType': error.runtimeType.toString()};
+  }
+
+  static String _formatErrorDebugDetails(Object error) {
+    final details = _compactErrorDebugDetails(error);
+    return details.entries
+        .map((entry) => '${entry.key}=${entry.value}')
+        .join(' ');
   }
 }

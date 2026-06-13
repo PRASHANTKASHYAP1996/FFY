@@ -587,6 +587,29 @@ function computeFinalSeconds(callData) {
   return 0;
 }
 
+// Server-authoritative billable duration used for settlement.
+// Deliberately ignores the client-reported `endedSeconds` (which a caller can
+// under-report to dodge charges, and which the prepaid-window cleanup cron
+// writes as 0) and derives talk time purely from server-set timestamps:
+//   billableStartedAtMs (set when both parties join) -> endedAtMs (set at end).
+// Returns 0 when the call never became billable (e.g. one party never joined),
+// which correctly results in no charge and no payout.
+function serverBillableSeconds(callData = {}) {
+  const billableStartedAtMs =
+    intOr(callData.billableStartedAtMs, 0) ||
+    intOr(callData.bothJoinedAtMs, 0) ||
+    timestampToMs(callData.billableStartedAt) ||
+    timestampToMs(callData.bothJoinedAt) ||
+    intOr(callData.startedAtMs, 0) ||
+    timestampToMs(callData.startedAt);
+  if (billableStartedAtMs <= 0) return 0;
+
+  const endedAtMs = callEndedAtMs(callData) || Date.now();
+  if (endedAtMs <= billableStartedAtMs) return 0;
+
+  return Math.floor((endedAtMs - billableStartedAtMs) / 1000);
+}
+
 function isFinalStatus(status) {
   return status === "ended" || status === "rejected";
 }
@@ -1005,6 +1028,7 @@ module.exports = {
   isPlaceholderSecret,
   timestampToMs,
   computeFinalSeconds,
+  serverBillableSeconds,
   isFinalStatus,
   isLiveStatus,
   isMissedReason,
