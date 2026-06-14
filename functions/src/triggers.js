@@ -17,6 +17,7 @@
   sanitizeListenerRateForFollowers,
   shouldSendMissedCall,
   endCallAsRejectedIfStillRinging,
+  deleteStoragePathIfSafe,
 } = require("./shared");
 const { requireAdmin } = require("./admin");
 
@@ -1451,5 +1452,48 @@ exports.cleanupCallRateLimits_v1 = functions
     staleSnap.docs.forEach((doc) => batch.delete(doc.ref));
     await batch.commit();
 
+    return null;
+  });
+
+exports.cleanupExpiredStories_v1 = functions
+  .region(REGION)
+  .pubsub.schedule("every 1 hours")
+  .timeZone("UTC")
+  .onRun(async () => {
+    const nowMs = Date.now();
+    const snap = await db
+      .collection("social_posts")
+      .where("isStory", "==", true)
+      .where("expiresAtMs", "<=", nowMs)
+      .limit(CLEANUP_BATCH_LIMIT)
+      .get();
+    if (snap.empty) return null;
+
+    let deleted = 0;
+    for (const doc of snap.docs) {
+      const data = doc.data() || {};
+
+      // Remove sub-collections so likes/comments/shares don't orphan.
+      for (const sub of ["likes", "comments", "shares"]) {
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const subSnap = await doc.ref.collection(sub).limit(300).get();
+          if (subSnap.empty) break;
+          const subBatch = db.batch();
+          subSnap.docs.forEach((d) => subBatch.delete(d.ref));
+          await subBatch.commit();
+          if (subSnap.size < 300) break;
+        }
+      }
+
+      const imagePath = strOr(data.imagePath).trim();
+      await doc.ref.delete();
+      await deleteStoragePathIfSafe(imagePath, {
+        allowedPrefixes: ["social_uploads/"],
+      });
+      deleted += 1;
+    }
+
+    logEvent("social.story_cleanup", { deleted });
     return null;
   });

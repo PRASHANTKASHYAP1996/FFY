@@ -1,7 +1,6 @@
 const {
   admin,
-  functions,
-  REGION,
+  regionalFunctions,
   intOr,
   strOr,
   boolOr,
@@ -348,14 +347,14 @@ async function buildSummaryPayload() {
   const recentEndedCalls = await db
     .collection("calls")
     .where("status", "==", "ended")
-    .orderBy("endedAt", "desc")
+    .orderBy("endedAtMs", "desc")
     .limit(SUMMARY_ENDED_SAMPLE_LIMIT)
     .get();
 
   const recentRejectedCalls = await db
     .collection("calls")
     .where("status", "==", "rejected")
-    .orderBy("endedAt", "desc")
+    .orderBy("endedAtMs", "desc")
     .limit(SUMMARY_REJECTED_SAMPLE_LIMIT)
     .get();
 
@@ -766,7 +765,7 @@ async function buildListenerLeaderboardPayload() {
       const snap = await db
         .collection("calls")
         .where("status", "==", "ended")
-        .orderBy("endedAt", "desc")
+        .orderBy("endedAtMs", "desc")
         .limit(LEADERBOARD_CALL_SAMPLE_LIMIT)
         .get();
 
@@ -842,8 +841,7 @@ async function getOrBuildCachedPayload({
   return payload;
 }
 
-exports.analyticsLoadSummary_v1 = functions
-  .region(REGION)
+exports.analyticsLoadSummary_v1 = regionalFunctions
   .https.onCall(async (data, context) => {
     assertCallableAppCheck(context, "analyticsLoadSummary_v1");
 
@@ -859,8 +857,7 @@ exports.analyticsLoadSummary_v1 = functions
     });
   });
 
-exports.analyticsLoadTodaySummary_v1 = functions
-  .region(REGION)
+exports.analyticsLoadTodaySummary_v1 = regionalFunctions
   .https.onCall(async (data, context) => {
     assertCallableAppCheck(context, "analyticsLoadTodaySummary_v1");
 
@@ -876,8 +873,7 @@ exports.analyticsLoadTodaySummary_v1 = functions
     });
   });
 
-exports.analyticsLoadRetentionSummary_v1 = functions
-  .region(REGION)
+exports.analyticsLoadRetentionSummary_v1 = regionalFunctions
   .https.onCall(async (data, context) => {
     assertCallableAppCheck(context, "analyticsLoadRetentionSummary_v1");
 
@@ -893,8 +889,7 @@ exports.analyticsLoadRetentionSummary_v1 = functions
     });
   });
 
-exports.analyticsLoadLast7DaysTimeseries_v1 = functions
-  .region(REGION)
+exports.analyticsLoadLast7DaysTimeseries_v1 = regionalFunctions
   .https.onCall(async (data, context) => {
     assertCallableAppCheck(context, "analyticsLoadLast7DaysTimeseries_v1");
 
@@ -910,8 +905,7 @@ exports.analyticsLoadLast7DaysTimeseries_v1 = functions
     });
   });
 
-exports.analyticsLoadListenerLeaderboard_v1 = functions
-  .region(REGION)
+exports.analyticsLoadListenerLeaderboard_v1 = regionalFunctions
   .https.onCall(async (data, context) => {
     assertCallableAppCheck(context, "analyticsLoadListenerLeaderboard_v1");
 
@@ -927,8 +921,7 @@ exports.analyticsLoadListenerLeaderboard_v1 = functions
     });
   });
 
-exports.analyticsRefreshCaches_v1 = functions
-  .region(REGION)
+exports.analyticsRefreshCaches_v1 = regionalFunctions
   .https.onCall(async (_data, context) => {
     assertCallableAppCheck(context, "analyticsRefreshCaches_v1");
 

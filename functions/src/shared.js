@@ -16,6 +16,13 @@ try {
 
 // ---------- CONFIG ----------
 const REGION = "us-central1";
+// Cap concurrent instances per function as a runaway-cost safety net. v1 has no
+// global default, so functions use the shared `regionalFunctions` builder below
+// (or merge maxInstances into their own runWith for secret/heavier functions).
+const MAX_INSTANCES = 40;
+const regionalFunctions = functions
+  .region(REGION)
+  .runWith({ maxInstances: MAX_INSTANCES });
 const PLATFORM_PERCENT = 20;
 
 const RATE_OPTIONS = [5, 10, 20, 50, 100];
@@ -985,6 +992,8 @@ module.exports = {
   FieldValue,
   Timestamp,
   REGION,
+  MAX_INSTANCES,
+  regionalFunctions,
   PLATFORM_PERCENT,
   RATE_OPTIONS,
   RINGING_TIMEOUT_SECONDS,

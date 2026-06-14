@@ -4,6 +4,7 @@ const {
   admin,
   functions,
   REGION,
+  MAX_INSTANCES,
   PLATFORM_PERCENT,
   RINGING_TIMEOUT_SECONDS,
   BILLING_GRACE_SECONDS,
@@ -3187,7 +3188,7 @@ exports.endCallAuthoritative_v1 = functions
 
 exports.startCall_v2 = functions
   .region(REGION)
-  .runWith({ secrets: ["AGORA_APP_ID", "AGORA_APP_CERTIFICATE"] })
+  .runWith({ maxInstances: MAX_INSTANCES, secrets: ["AGORA_APP_ID", "AGORA_APP_CERTIFICATE"] })
   .https.onCall(async (data, context) => {
     assertCallableAppCheck(context, "startCall_v2");
     

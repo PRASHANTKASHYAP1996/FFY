@@ -2,6 +2,7 @@
   admin,
   functions,
   REGION,
+  MAX_INSTANCES,
   MIN_WITHDRAWAL_AMOUNT,
   MAX_WITHDRAWAL_AMOUNT,
   MIN_TOPUP_AMOUNT,
@@ -759,7 +760,7 @@ exports.failTopupOrder_v1 = functions.region(REGION).https.onCall(async (data, c
 
 exports.createRazorpayOrder_v1 = functions
   .region(REGION)
-  .runWith({ secrets: ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"] })
+  .runWith({ maxInstances: MAX_INSTANCES, secrets: ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"] })
   .https.onCall(async (data, context) => {
   assertCallableAppCheck(context, "createRazorpayOrder_v1");
 
@@ -872,7 +873,7 @@ exports.createRazorpayOrder_v1 = functions
 
 exports.verifyRazorpayPayment_v1 = functions
   .region(REGION)
-  .runWith({ secrets: ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"] })
+  .runWith({ maxInstances: MAX_INSTANCES, secrets: ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"] })
   .https.onCall(async (data, context) => {
   assertCallableAppCheck(context, "verifyRazorpayPayment_v1");
 

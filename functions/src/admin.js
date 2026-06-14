@@ -2,6 +2,7 @@ const {
   admin,
   functions,
   REGION,
+  MAX_INSTANCES,
   strOr,
   intOr,
   adminActionCategory,
@@ -1659,7 +1660,7 @@ exports.adminDeleteReportedContent_v1 = functions
 
 exports.checkAgoraServerConfig_v1 = functions
   .region(REGION)
-  .runWith({ secrets: ["AGORA_APP_ID", "AGORA_APP_CERTIFICATE"] })
+  .runWith({ maxInstances: MAX_INSTANCES, secrets: ["AGORA_APP_ID", "AGORA_APP_CERTIFICATE"] })
   .https.onCall(async (data, context) => {
     assertCallableAppCheck(context, "checkAgoraServerConfig_v1");
     await requireAdmin(context);

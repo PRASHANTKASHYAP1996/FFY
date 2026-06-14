@@ -7,6 +7,7 @@ const {
   adminActionCategory,
   assertCallableAppCheck,
   callShouldHoldReserve,
+  MAX_INSTANCES,
 } = require("./shared");
 const { requireAdmin } = require("./admin");
 
@@ -1066,7 +1067,10 @@ async function buildDashboardPayload(adminMeta) {
   };
 }
 
-exports.adminGetDashboard_v1 = functions.region(REGION).https.onCall(async (data, context) => {
+exports.adminGetDashboard_v1 = functions
+  .region(REGION)
+  .runWith({ maxInstances: MAX_INSTANCES, memory: "512MB", timeoutSeconds: 120 })
+  .https.onCall(async (data, context) => {
   assertCallableAppCheck(context, "adminGetDashboard_v1");
 
   const adminMeta = await requireAdmin(context);
@@ -1089,6 +1093,7 @@ exports.adminGetDashboard_v1 = functions.region(REGION).https.onCall(async (data
 
 exports.adminRefreshDashboardCache_v1 = functions
   .region(REGION)
+  .runWith({ maxInstances: MAX_INSTANCES, memory: "512MB", timeoutSeconds: 120 })
   .https.onCall(async (_data, context) => {
     assertCallableAppCheck(context, "adminRefreshDashboardCache_v1");
 
