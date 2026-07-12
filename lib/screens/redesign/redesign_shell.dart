@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/theme/app_palette.dart';
+import '../../repositories/user_repository.dart';
+import '../../shared/models/app_user_model.dart';
+import '../listener_profile_screen.dart';
 
 /// Phase 1 of the redesign: the new 5-tab shell + light-blue theme.
 /// Discover is built out to match the agreed direction; the other tabs are
@@ -141,32 +144,45 @@ class _BottomNav extends StatelessWidget {
 // Discover (front door)
 // ---------------------------------------------------------------------------
 
-class _Listener {
-  const _Listener(this.name, this.initials, this.rating, this.rate);
-  final String name;
-  final String initials;
-  final String rating;
-  final int rate;
+String _initialsFromName(String name) {
+  final parts =
+      name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+  if (parts.isEmpty) return 'U';
+  if (parts.length == 1) {
+    final p = parts.first;
+    return (p.length >= 2 ? p.substring(0, 2) : p).toUpperCase();
+  }
+  return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
-class _DiscoverPage extends StatelessWidget {
+class _DiscoverPage extends StatefulWidget {
   const _DiscoverPage();
 
-  static const List<_Listener> _demo = <_Listener>[
-    _Listener('Meera', 'MK', '4.9', 10),
-    _Listener('Aarav', 'AR', '4.7', 5),
-    _Listener('Sana', 'SD', '4.8', 20),
-    _Listener('Rahul', 'RJ', '4.6', 10),
-    _Listener('Isha', 'IK', '5.0', 20),
-    _Listener('Kabir', 'KB', '4.5', 5),
-  ];
+  @override
+  State<_DiscoverPage> createState() => _DiscoverPageState();
+}
 
+class _DiscoverPageState extends State<_DiscoverPage> {
   static const List<String> _moods = <String>[
     'Lonely',
     'Stressed',
     'Breakup',
     'Just talk',
   ];
+
+  final Stream<List<AppUserModel>> _stream =
+      UserRepository.instance.watchAvailableListeners();
+
+  void _openProfile(AppUserModel user) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ListenerProfileScreen(
+          listenerId: user.uid,
+          initialUser: user,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -177,37 +193,72 @@ class _DiscoverPage extends StatelessWidget {
         children: [
           _header(),
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
+            child: StreamBuilder<List<AppUserModel>>(
+              stream: _stream,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    !snapshot.hasData) {
+                  return const Center(
+                    child: SizedBox(
+                      width: 26,
+                      height: 26,
+                      child: CircularProgressIndicator(
+                        color: AppPalette.blue,
+                        strokeWidth: 2.5,
+                      ),
+                    ),
+                  );
+                }
+                if (snapshot.hasError) {
+                  return const _DiscoverMessage(
+                    'Could not load listeners.\n'
+                    'Check your connection and try again.',
+                  );
+                }
+                final listeners = snapshot.data ?? const <AppUserModel>[];
+                if (listeners.isEmpty) {
+                  return const _DiscoverMessage(
+                    "No one's around right now 🌙\n"
+                    'Check back in a little while.',
+                  );
+                }
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _OnlineDot(),
-                      SizedBox(width: 6),
-                      Text(
-                        '14 here for you now',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: AppPalette.textSecondary,
-                        ),
+                      Row(
+                        children: [
+                          const _OnlineDot(),
+                          const SizedBox(width: 6),
+                          Text(
+                            '${listeners.length} here for you now',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: AppPalette.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      GridView.count(
+                        crossAxisCount: 2,
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 12,
+                        childAspectRatio: 0.92,
+                        children: listeners
+                            .map((u) => _ListenerCard(
+                                  user: u,
+                                  onTap: () => _openProfile(u),
+                                ))
+                            .toList(),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  GridView.count(
-                    crossAxisCount: 2,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                    childAspectRatio: 0.92,
-                    children:
-                        _demo.map((l) => _ListenerCard(listener: l)).toList(),
-                  ),
-                ],
-              ),
+                );
+              },
             ),
           ),
         ],
@@ -278,76 +329,139 @@ class _DiscoverPage extends StatelessWidget {
 }
 
 class _ListenerCard extends StatelessWidget {
-  const _ListenerCard({required this.listener});
-  final _Listener listener;
+  const _ListenerCard({required this.user, required this.onTap});
+  final AppUserModel user;
+  final VoidCallback onTap;
+
+  String get _ratingLabel =>
+      user.ratingCount <= 0 ? 'New' : user.ratingAvg.toStringAsFixed(1);
+
+  bool get _online => user.isAvailable && !user.isOnCall;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: AppPalette.cardDecoration(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              _Avatar(initials: listener.initials, size: 40),
-              const Spacer(),
-              const _OnlineDot(),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            listener.name,
-            style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: AppPalette.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Row(
-            children: [
-              const Icon(Icons.star_rounded, size: 14, color: AppPalette.star),
-              const SizedBox(width: 3),
-              Text(
-                '${listener.rating} · ₹${listener.rate}/min',
-                style: const TextStyle(
-                    fontSize: 12, color: AppPalette.textSecondary),
-              ),
-            ],
-          ),
-          const Spacer(),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: () {},
-              style: FilledButton.styleFrom(
-                backgroundColor: AppPalette.blue,
-                padding: const EdgeInsets.symmetric(vertical: 9),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: AppPalette.cardDecoration(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                _Avatar(
+                  initials: _initialsFromName(user.safeDisplayName),
+                  photoUrl: user.photoURL,
+                  size: 40,
                 ),
-                minimumSize: const Size(0, 0),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: const Text('Talk',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                const Spacer(),
+                if (_online) const _OnlineDot(),
+              ],
             ),
+            const SizedBox(height: 10),
+            Text(
+              user.safeDisplayName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: AppPalette.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Row(
+              children: [
+                const Icon(Icons.star_rounded, size: 14, color: AppPalette.star),
+                const SizedBox(width: 3),
+                Expanded(
+                  child: Text(
+                    '$_ratingLabel · ₹${user.listenerRate}/min',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 12, color: AppPalette.textSecondary),
+                  ),
+                ),
+              ],
+            ),
+            const Spacer(),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: onTap,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppPalette.blue,
+                  padding: const EdgeInsets.symmetric(vertical: 9),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  minimumSize: const Size(0, 0),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text('Talk',
+                    style:
+                        TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DiscoverMessage extends StatelessWidget {
+  const _DiscoverMessage(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 14,
+            height: 1.5,
+            color: AppPalette.textSecondary,
           ),
-        ],
+        ),
       ),
     );
   }
 }
 
 class _Avatar extends StatelessWidget {
-  const _Avatar({required this.initials, this.size = 40});
+  const _Avatar({required this.initials, this.photoUrl, this.size = 40});
   final String initials;
+  final String? photoUrl;
   final double size;
 
   @override
   Widget build(BuildContext context) {
+    final url = (photoUrl ?? '').trim();
+    if (url.isNotEmpty) {
+      return ClipOval(
+        child: Image.network(
+          url,
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _initialsCircle(),
+          loadingBuilder: (context, child, progress) =>
+              progress == null ? child : _initialsCircle(),
+        ),
+      );
+    }
+    return _initialsCircle();
+  }
+
+  Widget _initialsCircle() {
     return Container(
       width: size,
       height: size,
