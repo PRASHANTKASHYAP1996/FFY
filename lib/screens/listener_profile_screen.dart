@@ -3,14 +3,72 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../core/constants/firestore_paths.dart';
+import '../core/theme/app_palette.dart';
+import '../core/theme/friendify_brand.dart';
 import '../repositories/call_repository.dart';
 import '../repositories/user_repository.dart';
 import '../services/call_session_manager.dart';
 import '../services/firestore_service.dart';
+import '../shared/chat_direction_resolver.dart';
+import '../shared/chat_navigation_guards.dart';
 import '../shared/models/app_user_model.dart';
+import '../shared/user_safety_actions.dart';
 import 'caller_waiting_screen.dart';
 import 'chat_conversation_screen.dart';
+import 'crisis_help_screen.dart';
 import 'voice_call_screen.dart';
+
+String _listenerProfileSafeName(AppUserModel user) {
+  final name = user.displayName.trim();
+  return name.isEmpty ? 'Listener' : name;
+}
+
+@visibleForTesting
+AlertDialog buildConversationRepairDialog({
+  required AppUserModel user,
+  required VoidCallback onGoBack,
+}) {
+  return AlertDialog(
+    title: const Text('This conversation needs repair'),
+    content: Text(
+      'We could not confirm the saved speaker/listener direction for your '
+      'conversation with ${_listenerProfileSafeName(user)}. Please go back '
+      'and repair it before opening this chat.',
+    ),
+    actions: [
+      FilledButton(
+        onPressed: onGoBack,
+        child: const Text('Go back'),
+      ),
+    ],
+  );
+}
+
+@visibleForTesting
+AlertDialog buildExistingConversationDialog({
+  required AppUserModel user,
+  required VoidCallback onGoBack,
+  required VoidCallback onOpenConversation,
+}) {
+  return AlertDialog(
+    title: const Text('Existing conversation found'),
+    content: Text(
+      'You already have a conversation with ${_listenerProfileSafeName(user)} '
+      'from the other side of this connection. You can open that conversation '
+      'safely or go back.',
+    ),
+    actions: [
+      TextButton(
+        onPressed: onGoBack,
+        child: const Text('Go back'),
+      ),
+      FilledButton(
+        onPressed: onOpenConversation,
+        child: const Text('Open conversation'),
+      ),
+    ],
+  );
+}
 
 class ListenerProfileScreen extends StatefulWidget {
   final String listenerId;
@@ -34,8 +92,10 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
   String _followingWorkingFor = '';
   String _favoriteWorkingFor = '';
   String _callingFor = '';
-  String _requestingAccessFor = '';
+  final String _requestingAccessFor = '';
   bool _callStartInFlight = false;
+  bool _reportingUser = false;
+  bool _blockingUser = false;
 
   void _showSnack(String text) {
     if (!mounted) return;
@@ -44,9 +104,36 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
     );
   }
 
+  Future<void> _showConversationRepairDialog(AppUserModel user) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return buildConversationRepairDialog(
+          user: user,
+          onGoBack: () => Navigator.of(dialogContext).pop(),
+        );
+      },
+    );
+  }
+
+  Future<bool> _showExistingConversationDialog(AppUserModel user) async {
+    if (!mounted) return false;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return buildExistingConversationDialog(
+          user: user,
+          onGoBack: () => Navigator.of(dialogContext).pop(false),
+          onOpenConversation: () => Navigator.of(dialogContext).pop(true),
+        );
+      },
+    );
+    return result == true;
+  }
+
   String _safeName(AppUserModel user) {
-    final name = user.displayName.trim();
-    return name.isEmpty ? 'Listener' : name;
+    return _listenerProfileSafeName(user);
   }
 
   List<String> _safeStringList(List<String> value) {
@@ -67,16 +154,14 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
     return out;
   }
 
-  bool _isBusy(AppUserModel user) {
-    return user.hasActiveCall || !user.isAvailable;
-  }
-
   bool _hasAnyActionRunning() {
     return _followingWorkingFor.isNotEmpty ||
         _favoriteWorkingFor.isNotEmpty ||
         _callingFor.isNotEmpty ||
         _requestingAccessFor.isNotEmpty ||
-        _callStartInFlight;
+        _callStartInFlight ||
+        _reportingUser ||
+        _blockingUser;
   }
 
   bool get _hasBlockingCallState =>
@@ -86,41 +171,10 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
       _callSession.state == CallState.reconnecting ||
       _callSession.state == CallState.ending;
 
-  int _listenerEarnFromVisible(int visibleRate) {
-    return _userRepository.listenerPayoutFromVisibleRate(visibleRate);
-  }
-
   String _ratingLabel(num avg) => avg.toStringAsFixed(1);
 
   String _humanizeFunctionError(Object e) {
-    if (e is FirebaseFunctionsException) {
-      final code = e.code.trim();
-      final msg = (e.message ?? '').trim();
-
-      debugPrint(
-        'listener_profile startCall_v2 FirebaseFunctionsException: '
-        'code=$code message=$msg details=${e.details}',
-      );
-
-      if (msg.isNotEmpty) return msg;
-
-      switch (code) {
-        case 'resource-exhausted':
-          return 'Too many call attempts. Please wait and try again.';
-        case 'failed-precondition':
-          return 'Listener is unavailable, busy, or has not allowed calls yet.';
-        case 'unauthenticated':
-          return 'Please login again.';
-        case 'invalid-argument':
-          return 'Invalid call request.';
-        case 'not-found':
-          return 'Listener not found.';
-        default:
-          return 'Call failed: $code';
-      }
-    }
-
-    return 'Could not start call. Please try again.';
+    return _callRepository.humanizeCallActionError(e);
   }
 
   String _canonicalSessionDocId({
@@ -144,28 +198,37 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
         session['speakerBlocked'] == true;
   }
 
-  bool _sessionCallAllowed(Map<String, dynamic> session) {
-    if (!_sessionExists(session)) return false;
-    return session[FirestorePaths.fieldCallAllowed] == true ||
-        session['callAllowed'] == true;
+  bool _sessionCallAllowedForDirection({
+    required AppUserModel me,
+    required AppUserModel user,
+    required Map<String, dynamic> session,
+  }) {
+    final strictAllowed = _callRepository.sessionAllowsCallForDirection(
+      session: session,
+      speakerId: me.uid,
+      listenerId: user.uid,
+    );
+    if (strictAllowed) return true;
+
+    final status = (session[FirestorePaths.fieldChatStatus] ?? '').toString();
+    if (status != FirestorePaths.chatStatusAccepted) return false;
+
+    final actualListenerId =
+        (session[FirestorePaths.fieldActualListenerId] ?? '').toString().trim();
+    return actualListenerId == user.uid.trim() &&
+        _sessionIdentityLooksComplete(me: me, user: user, session: session);
   }
 
-  String _sessionStatus(Map<String, dynamic> session) {
-    if (!_sessionExists(session)) {
-      return FirestorePaths.chatStatusNone;
-    }
-
-    final status = (session[FirestorePaths.fieldChatStatus] ??
-            session['status'] ??
-            FirestorePaths.chatStatusNone)
-        .toString()
-        .trim();
-
-    if (status.isEmpty) {
-      return FirestorePaths.chatStatusNone;
-    }
-
-    return status;
+  bool _sessionIdentityLooksComplete({
+    required AppUserModel me,
+    required AppUserModel user,
+    required Map<String, dynamic> session,
+  }) {
+    return _callRepository.sessionIdentityLooksComplete(
+      session: session,
+      speakerId: me.uid,
+      listenerId: user.uid,
+    );
   }
 
   bool _sessionLooksCanonical({
@@ -173,114 +236,14 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
     required AppUserModel user,
     required Map<String, dynamic> session,
   }) {
-    final expectedDocId = _canonicalSessionDocId(
+    if (!_sessionIdentityLooksComplete(me: me, user: user, session: session)) {
+      return false;
+    }
+    return _callRepository.sessionDirectionLooksComplete(
+      session: session,
       speakerId: me.uid,
       listenerId: user.uid,
     );
-    final docId = (session['docId'] ?? '').toString().trim();
-    final canonicalDocId = (session['canonicalDocId'] ?? '').toString().trim();
-    final speakerId =
-        (session[FirestorePaths.fieldSpeakerId] ?? '').toString().trim();
-    final listenerId =
-        (session[FirestorePaths.fieldListenerId] ?? '').toString().trim();
-
-    if (expectedDocId.isEmpty) return false;
-    if (speakerId != me.uid) return false;
-    if (listenerId != user.uid) return false;
-    if (canonicalDocId.isNotEmpty && canonicalDocId != expectedDocId) {
-      return false;
-    }
-    if (docId.isNotEmpty && docId != expectedDocId) {
-      return false;
-    }
-    return true;
-  }
-
-  String _chatStatusText({
-    required AppUserModel me,
-    required AppUserModel user,
-    required Map<String, dynamic> session,
-  }) {
-    final status = _sessionStatus(session);
-    final callAllowed = _sessionCallAllowed(session);
-    final blocked = _sessionBlocked(session);
-    final exists = _sessionExists(session);
-    final canonical = _sessionLooksCanonical(
-      me: me,
-      user: user,
-      session: session,
-    );
-
-    if (blocked) {
-      return 'Chat unavailable';
-    }
-
-    if (_hasBlockingCallState) {
-      return 'Call already active';
-    }
-
-    if (!canonical) {
-      return 'Chat not ready';
-    }
-
-    if (!exists || status == FirestorePaths.chatStatusNone) {
-      return 'Chat not started';
-    }
-
-    if (callAllowed) {
-      return 'Call allowed';
-    }
-
-    if (status == FirestorePaths.chatStatusPending) {
-      return 'Waiting for listener approval';
-    }
-
-    if (status == FirestorePaths.chatStatusAccepted ||
-        status == FirestorePaths.chatStatusActive) {
-      return 'Chat approved • call still locked';
-    }
-
-    if (status == FirestorePaths.chatStatusBlocked) {
-      return 'Blocked';
-    }
-
-    return 'Chat status: $status';
-  }
-
-  Color _chatStatusColor({
-    required AppUserModel me,
-    required AppUserModel user,
-    required Map<String, dynamic> session,
-  }) {
-    final status = _sessionStatus(session);
-    final callAllowed = _sessionCallAllowed(session);
-    final blocked = _sessionBlocked(session);
-    final canonical = _sessionLooksCanonical(
-      me: me,
-      user: user,
-      session: session,
-    );
-
-    if (_hasBlockingCallState) {
-      return const Color(0xFF4F46E5);
-    }
-    if (!canonical) {
-      return const Color(0xFF6B7280);
-    }
-    if (blocked || status == FirestorePaths.chatStatusBlocked) {
-      return const Color(0xFFDC2626);
-    }
-    if (callAllowed) {
-      return const Color(0xFF15803D);
-    }
-    if (status == FirestorePaths.chatStatusPending) {
-      return const Color(0xFFD97706);
-    }
-    if (status == FirestorePaths.chatStatusAccepted ||
-        status == FirestorePaths.chatStatusActive) {
-      return const Color(0xFF4F46E5);
-    }
-    return const Color(0xFF6B7280);
   }
 
   bool _canRequestAccess({
@@ -309,8 +272,6 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
     if (_hasAnyActionRunning()) return false;
     if (_hasBlockingCallState) return false;
     if (me.uid == user.uid) return false;
-    if (_isBusy(user)) return false;
-    if (me.hasActiveCall || me.activeCallId.trim().isNotEmpty) return false;
     if (me.blocked.contains(user.uid)) return false;
     if (!_sessionLooksCanonical(me: me, user: user, session: session)) {
       return false;
@@ -318,7 +279,8 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
     if (_sessionBlocked(session)) {
       return false;
     }
-    if (!_sessionCallAllowed(session)) {
+    if (!_sessionCallAllowedForDirection(
+        me: me, user: user, session: session)) {
       return false;
     }
     return true;
@@ -367,60 +329,175 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
     setState(() => _favoriteWorkingFor = '');
   }
 
-  Future<void> _requestChatAccess({
-    required AppUserModel me,
-    required AppUserModel user,
-  }) async {
-    if (_hasAnyActionRunning()) return;
+  Future<String> _recentSharedCallId(String otherUserId) async {
+    final safeOtherUserId = otherUserId.trim();
+    final myUid = _userRepository.myUidOrNull ?? '';
+    if (safeOtherUserId.isEmpty || myUid.isEmpty) return '';
 
-    if (_hasBlockingCallState) {
-      _showSnack('Finish your current call flow first.');
-      return;
+    final activeCallId = _callSession.callDocRef?.id.trim() ?? '';
+    if (activeCallId.isNotEmpty) {
+      final activeCall = _callSession.call;
+      final callerId =
+          (activeCall[FirestorePaths.fieldCallerId] ?? '').toString().trim();
+      final calleeId =
+          (activeCall[FirestorePaths.fieldCalleeId] ?? '').toString().trim();
+      final matchesActiveCall =
+          (callerId == myUid && calleeId == safeOtherUserId) ||
+              (callerId == safeOtherUserId && calleeId == myUid);
+      if (matchesActiveCall) {
+        return activeCallId;
+      }
     }
 
-    final safeListenerId = user.uid.trim();
-    if (safeListenerId.isEmpty) return;
-
-    if (me.uid == safeListenerId) {
-      _showSnack('This is your own profile.');
-      return;
+    final recentCalls = await _callRepository.fetchRecentCalls(limit: 50);
+    for (final call in recentCalls) {
+      final matches =
+          (call.callerId == myUid && call.calleeId == safeOtherUserId) ||
+              (call.callerId == safeOtherUserId && call.calleeId == myUid);
+      if (matches) {
+        return call.id.trim();
+      }
     }
 
-    if (me.blocked.contains(safeListenerId)) {
-      _showSnack('You blocked this listener.');
-      return;
-    }
+    return '';
+  }
 
-    setState(() => _requestingAccessFor = safeListenerId);
+  Future<void> _openHelp() async {
+    if (!mounted) return;
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const CrisisHelpScreen(),
+      ),
+    );
+  }
+
+  Future<void> _reportUser(AppUserModel user) async {
+    if (_reportingUser) return;
+
+    final reason = await showUserSafetyReportReasonSheet(
+      context,
+      title: 'Report user',
+    );
+    if (!mounted) return;
+    if (reason == null || reason.trim().isEmpty) return;
+
+    setState(() => _reportingUser = true);
 
     try {
-      final ensuredId =
-          await _callRepository.ensureChatSessionWithListener(safeListenerId);
-
-      final expectedId = _canonicalSessionDocId(
-        speakerId: me.uid,
-        listenerId: safeListenerId,
-      );
-
-      if (ensuredId.isEmpty || ensuredId != expectedId) {
-        _showSnack('Could not prepare the correct chat session.');
+      final callId = await _recentSharedCallId(user.uid);
+      if (callId.isEmpty) {
+        _showSnack('Report is available after you have a call with this user.');
         return;
       }
 
-      await _callRepository.requestCallPermissionFromListener(
-        listenerId: safeListenerId,
+      await FirestoreService.report(
+        reportedUserId: user.uid,
+        callId: callId,
+        reason: reason,
       );
 
-      if (!mounted) return;
-      _showSnack(
-        'Chat request sent. You can chat now, but calling stays locked until listener approval.',
-      );
-    } catch (_) {
-      _showSnack('Could not send chat request. Please try again.');
+      _showSnack('Report submitted.');
+    } catch (e) {
+      _showSnack('Report failed. Please try again.');
+      if (kDebugMode) {
+        debugPrint('Listener profile report failed: ${e.runtimeType}');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _reportingUser = false);
+      } else {
+        _reportingUser = false;
+      }
     }
+  }
 
-    if (!mounted) return;
-    setState(() => _requestingAccessFor = '');
+  Future<void> _blockUser(AppUserModel user) async {
+    if (_blockingUser) return;
+
+    final confirmed = await showBlockUserConfirmationDialog(
+      context,
+      userName: userSafetyDisplayName(user, fallback: 'this user'),
+    );
+    if (!mounted || !confirmed) return;
+
+    setState(() => _blockingUser = true);
+
+    try {
+      await FirestoreService.blockUser(user.uid);
+      _showSnack('User blocked. Chat unavailable.');
+    } catch (e) {
+      _showSnack('Could not block this user. Please try again.');
+      if (kDebugMode) {
+        debugPrint('Listener profile block failed: ${e.runtimeType}');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _blockingUser = false);
+      } else {
+        _blockingUser = false;
+      }
+    }
+  }
+
+  Map<String, dynamic> _sessionWithSafetyOverrides({
+    required AppUserModel me,
+    required AppUserModel user,
+    required Map<String, dynamic> session,
+  }) {
+    final blockedByUsers = userSafetyBlockApplies(
+      myUid: me.uid,
+      otherUserId: user.uid,
+      myBlockedUserIds: me.blocked,
+      otherBlockedUserIds: user.blocked,
+    );
+
+    if (!blockedByUsers) return session;
+
+    return <String, dynamic>{
+      ...session,
+      FirestorePaths.fieldSpeakerBlocked: true,
+      FirestorePaths.fieldListenerBlocked: true,
+    };
+  }
+
+  // ignore: unused_element
+  List<Widget> _buildSafetyActions(AppUserModel user) {
+    return [
+      PopupMenuButton<UserSafetyAction>(
+        tooltip: 'Safety actions',
+        onSelected: (action) async {
+          switch (action) {
+            case UserSafetyAction.reportUser:
+              await _reportUser(user);
+              break;
+            case UserSafetyAction.blockUser:
+              await _blockUser(user);
+              break;
+            case UserSafetyAction.help:
+              await _openHelp();
+              break;
+          }
+        },
+        itemBuilder: (_) => [
+          PopupMenuItem<UserSafetyAction>(
+            value: UserSafetyAction.reportUser,
+            enabled: !_reportingUser,
+            child: const Text('Report user'),
+          ),
+          PopupMenuItem<UserSafetyAction>(
+            value: UserSafetyAction.blockUser,
+            enabled: !_blockingUser,
+            child: const Text('Block user'),
+          ),
+          const PopupMenuItem<UserSafetyAction>(
+            value: UserSafetyAction.help,
+            child: Text('Help / Crisis resources'),
+          ),
+        ],
+      ),
+    ];
   }
 
   Future<void> _openChat({
@@ -436,6 +513,68 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
     }
 
     try {
+      final existingSession = await _callRepository.getChatSessionByPair(
+        speakerId: me.uid,
+        listenerId: safeListenerId,
+      );
+
+      if (existingSession['exists'] == true) {
+        final direction = _callRepository.resolveSessionDirectionForUser(
+          session: existingSession,
+          myUid: me.uid,
+          fallbackSpeakerId: me.uid,
+          fallbackListenerId: safeListenerId,
+          mode: ChatDirectionResolutionMode.strictStoredDirection,
+        );
+
+        if (!direction.isResolved) {
+          await _showConversationRepairDialog(user);
+          return;
+        }
+
+        if (!selectedListenerMatchesStoredDirection(
+          selectedListenerId: safeListenerId,
+          actualListenerId: direction.actualListenerId,
+        )) {
+          final openExisting = await _showExistingConversationDialog(user);
+          if (openExisting != true) return;
+
+          FocusManager.instance.primaryFocus?.unfocus();
+          if (!mounted) return;
+
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ChatConversationScreen(
+                speakerId: direction.actualSpeakerId,
+                listenerId: direction.actualListenerId,
+                actualListenerId: direction.actualListenerId,
+                iAmListener: direction.iAmListener,
+                initialOtherUser: user,
+              ),
+            ),
+          );
+          return;
+        }
+
+        FocusManager.instance.primaryFocus?.unfocus();
+        if (!mounted) return;
+
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ChatConversationScreen(
+              speakerId: direction.actualSpeakerId,
+              listenerId: direction.actualListenerId,
+              actualListenerId: direction.actualListenerId,
+              iAmListener: direction.iAmListener,
+              initialOtherUser: user,
+            ),
+          ),
+        );
+        return;
+      }
+
       final ensuredId =
           await _callRepository.ensureChatSessionWithListener(safeListenerId);
 
@@ -445,15 +584,16 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
       );
 
       if (ensuredId.isEmpty || ensuredId != expectedId) {
-        _showSnack('Could not prepare the correct chat session.');
+        _showSnack('Could not get this chat ready. Please try again.');
         return;
       }
-    } catch (_) {
-      _showSnack('Could not open chat right now.');
+    } catch (e) {
+      _showSnack(_callRepository.humanizeChatActionError(e));
       return;
     }
 
     if (!mounted) return;
+    FocusManager.instance.primaryFocus?.unfocus();
 
     await Navigator.push(
       context,
@@ -461,6 +601,7 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
         builder: (_) => ChatConversationScreen(
           speakerId: me.uid,
           listenerId: safeListenerId,
+          actualListenerId: safeListenerId,
           iAmListener: false,
           initialOtherUser: user,
         ),
@@ -520,19 +661,12 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
       ),
       session: session,
     )) {
-      _showSnack('Chat session missing. Open chat first.');
+      _showSnack('Send a message first to start this chat.');
       return;
     }
 
     if (!_sessionExists(session)) {
-      _showSnack('Chat session missing. Open chat first.');
-      return;
-    }
-
-    if (!_sessionCallAllowed(session)) {
-      _showSnack(
-        'Chat first. Listener must allow calls before you can call now.',
-      );
+      _showSnack('Send a message first to start this chat.');
       return;
     }
 
@@ -543,11 +677,6 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
 
     if (me.uid == safeListenerId) {
       _showSnack('You cannot call yourself.');
-      return;
-    }
-
-    if (me.hasActiveCall || me.activeCallId.trim().isNotEmpty) {
-      _showSnack('You already have an active call.');
       return;
     }
 
@@ -563,19 +692,8 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
         return;
       }
 
-      if (_hasBlockingCallState ||
-          meLatest.hasActiveCall ||
-          meLatest.activeCallId.trim().isNotEmpty) {
+      if (_hasBlockingCallState) {
         _showSnack('You already have an active call.');
-        return;
-      }
-
-      final latestAvailable = _userRepository.usableCreditsFromUser(meLatest);
-
-      if (latestAvailable < visibleRate) {
-        _showSnack(
-          'Low credit. You need at least ₹$visibleRate to start this call.',
-        );
         return;
       }
 
@@ -585,27 +703,21 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
         return;
       }
 
-      final latestActiveCallId = listenerLatest.activeCallId.trim();
-      final latestAvailableFlag = listenerLatest.isAvailable;
-
-      if (!latestAvailableFlag) {
-        _showSnack('Listener is offline right now.');
-        return;
-      }
-
-      if (latestActiveCallId.isNotEmpty) {
-        _showSnack('Listener is busy right now.');
-        return;
-      }
-
       final canCall = await _callRepository.canCurrentUserCallListener(
         listenerId: safeListenerId,
       );
 
-      if (!canCall) {
-        _showSnack(
-          'Call is still locked. Wait until the listener allows call.',
+      final readiness = _callRepository.callReadinessForKnownUsers(
+        me: meLatest,
+        listener: listenerLatest,
+        hasCallAccess: canCall,
+        requiredCredits: visibleRate,
+      );
+      if (!readiness.canStart) {
+        debugPrint(
+          'call.start_local_preflight_blocked reason=${readiness.reason}',
         );
+        _showSnack(readiness.message);
         return;
       }
 
@@ -619,7 +731,7 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
         _callStartInFlight = true;
       }
 
-      final callRef = await _callRepository.createCallToListener(
+      final callStart = await _callRepository.createCallToListener(
         listenerId: safeListenerId,
       );
 
@@ -629,15 +741,25 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
         _callStartInFlight = false;
       });
 
-      if (callRef == null) {
-        _showSnack('Call could not start. Please try again.');
+      if (callStart == null) {
+        _showSnack('Could not start the call. Please try again.');
+        return;
+      }
+
+      if (!callStart.canOpenWaitingScreen) {
+        _showSnack('Call setup is incomplete. Please try again.');
         return;
       }
 
       final ok = await Navigator.push<bool>(
         context,
         MaterialPageRoute(
-          builder: (_) => CallerWaitingScreen(callDocRef: callRef),
+          builder: (_) => CallerWaitingScreen(
+            callDocRef: callStart.callRef,
+            initialAgoraToken: callStart.agoraToken,
+            initialAgoraUid: callStart.agoraUid,
+            initialChannelId: callStart.channelId,
+          ),
         ),
       );
 
@@ -670,22 +792,23 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
     }
   }
 
+  // ignore: unused_element
   Widget _sectionTitle(String text) {
     return Text(
       text,
       style: const TextStyle(
         fontSize: 16,
         fontWeight: FontWeight.w900,
-        color: Color(0xFF111827),
+        color: FriendifyBrand.pureWhite,
       ),
     );
   }
 
   Widget _pillChip(
     String text, {
-    Color background = const Color(0xFFF3F4F8),
-    Color foreground = const Color(0xFF374151),
-    Color border = const Color(0xFFE5E7EB),
+    Color background = AppPalette.blueTint,
+    Color foreground = AppPalette.blue,
+    Color border = AppPalette.blueTint,
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -705,6 +828,7 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
     );
   }
 
+  // ignore: unused_element
   Widget _metricCard({
     required IconData icon,
     required String label,
@@ -714,9 +838,9 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
     return Container(
       padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
+        color: FriendifyBrand.darkSurfaceElevated,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withValues(alpha: 0.20)),
+        border: Border.all(color: color.withValues(alpha: 0.26)),
       ),
       child: Row(
         children: [
@@ -742,7 +866,7 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
                 Text(
                   label,
                   style: const TextStyle(
-                    color: Color(0xFF6B7280),
+                    color: FriendifyBrand.slate,
                     fontWeight: FontWeight.w700,
                     fontSize: 12.5,
                   ),
@@ -788,7 +912,9 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
       case CallState.ended:
         return 'Call ended';
       case CallState.failed:
-        return _callSession.status.isEmpty ? 'Call failed' : _callSession.status;
+        return _callSession.status.isEmpty
+            ? 'Call failed'
+            : _callSession.status;
       case CallState.idle:
         return _callSession.status;
     }
@@ -819,16 +945,16 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
         final showDuration = _callSession.state == CallState.connected ||
             _callSession.state == CallState.reconnecting;
 
-        return Card(
+        return Container(
           margin: const EdgeInsets.only(bottom: 12),
-          color: const Color(0xFFECFDF3),
+          decoration: AppPalette.cardDecoration(radius: 18),
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Row(
               children: [
                 const CircleAvatar(
-                  backgroundColor: Color(0xFFD1FAE5),
-                  child: Icon(Icons.call, color: Color(0xFF047857)),
+                  backgroundColor: Color(0x333ED7B8),
+                  child: Icon(Icons.call, color: AppPalette.online),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -840,22 +966,22 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
                         style: TextStyle(
                           fontWeight: FontWeight.w900,
                           fontSize: 16,
-                          color: Color(0xFF111827),
+                          color: AppPalette.textPrimary,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'With $otherName • $safeStateLabel',
+                        'With $otherName - $safeStateLabel',
                         style: const TextStyle(
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFF374151),
+                          color: AppPalette.textSecondary,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         showDuration ? 'Duration $mm:$ss' : 'Connecting...',
                         style: const TextStyle(
-                          color: Color(0xFF6B7280),
+                          color: AppPalette.textSecondary,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -907,11 +1033,49 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
     );
   }
 
+  Widget _profileAvatar(AppUserModel user, double size) {
+    final name = _safeName(user);
+    final photoUrl = user.photoURL.trim();
+
+    final fallback = Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: AppPalette.blue,
+        borderRadius: BorderRadius.circular(size * 0.28),
+      ),
+      child: Text(
+        name.isNotEmpty ? name[0].toUpperCase() : 'L',
+        style: TextStyle(
+          fontSize: size * 0.34,
+          fontWeight: FontWeight.w900,
+          color: FriendifyBrand.pureWhite,
+        ),
+      ),
+    );
+
+    if (photoUrl.isEmpty) return fallback;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(size * 0.28),
+      child: Image.network(
+        photoUrl,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => fallback,
+      ),
+    );
+  }
+
+  // ignore: unused_element
   Widget _infoSection({
     required String title,
     required Widget child,
   }) {
-    return Card(
+    return Container(
+      decoration: FriendifyBrand.panelDecoration(),
       child: Padding(
         padding: const EdgeInsets.all(15),
         child: Column(
@@ -926,53 +1090,128 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
     );
   }
 
-  Widget _accessStatusCard({
-    required AppUserModel me,
-    required AppUserModel user,
-    required Map<String, dynamic> session,
+  Widget _profileStat({
+    required String value,
+    required String label,
   }) {
-    final color = _chatStatusColor(
-      me: me,
-      user: user,
-      session: session,
-    );
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: color.withValues(alpha: 0.22),
-        ),
-      ),
-      child: Row(
+    return Expanded(
+      child: Column(
         children: [
-          Icon(
-            _hasBlockingCallState
-                ? Icons.call_rounded
-                : _sessionCallAllowed(session)
-                    ? Icons.lock_open_rounded
-                    : Icons.lock_outline_rounded,
-            color: color,
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppPalette.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0,
+            ),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              _chatStatusText(
-                me: me,
-                user: user,
-                session: session,
-              ),
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.w800,
-              ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppPalette.textSecondary,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _smallActionTile({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onTap,
+    bool selected = false,
+    bool working = false,
+  }) {
+    final color =
+        selected ? AppPalette.blue : AppPalette.textPrimary;
+    return Expanded(
+      child: InkWell(
+        onTap: working ? null : onTap,
+        borderRadius: BorderRadius.circular(15),
+        child: Container(
+          height: 56,
+          decoration: BoxDecoration(
+            color: AppPalette.card,
+            borderRadius: BorderRadius.circular(15),
+            border: Border.all(
+              color: selected ? AppPalette.blue : AppPalette.border,
+            ),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (working)
+                const SizedBox(
+                  width: 17,
+                  height: 17,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                Icon(icon, color: color, size: 20),
+              const SizedBox(height: 5),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppPalette.textSecondary,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _profileMenuButton(AppUserModel user) {
+    return PopupMenuButton<UserSafetyAction>(
+      tooltip: 'Profile actions',
+      icon: const Icon(
+        Icons.ios_share_rounded,
+        color: AppPalette.textPrimary,
+      ),
+      color: AppPalette.card,
+      onSelected: (action) async {
+        switch (action) {
+          case UserSafetyAction.reportUser:
+            await _reportUser(user);
+            break;
+          case UserSafetyAction.blockUser:
+            await _blockUser(user);
+            break;
+          case UserSafetyAction.help:
+            await _openHelp();
+            break;
+        }
+      },
+      itemBuilder: (_) => [
+        PopupMenuItem<UserSafetyAction>(
+          value: UserSafetyAction.reportUser,
+          enabled: !_reportingUser,
+          child: const Text('Report user'),
+        ),
+        PopupMenuItem<UserSafetyAction>(
+          value: UserSafetyAction.blockUser,
+          enabled: !_blockingUser,
+          child: const Text('Block user'),
+        ),
+        const PopupMenuItem<UserSafetyAction>(
+          value: UserSafetyAction.help,
+          child: Text('Help / Crisis resources'),
+        ),
+      ],
     );
   }
 
@@ -981,6 +1220,11 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
     required AppUserModel user,
     required Map<String, dynamic> session,
   }) {
+    final effectiveSession = _sessionWithSafetyOverrides(
+      me: me,
+      user: user,
+      session: session,
+    );
     final myUid = FirestoreService.safeUidOrNull() ?? '';
     final isMyOwnProfile = myUid == user.uid;
 
@@ -988,9 +1232,6 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
     final followers = user.followersCount;
     final level = _userRepository.levelFromFollowers(followers);
     final visibleRate = user.listenerRate;
-    final listenerEarn = _listenerEarnFromVisible(visibleRate);
-    final platformKeep = visibleRate - listenerEarn;
-    final isBusy = _isBusy(user);
     final isFollowing = me.following.contains(user.uid);
     final isFavorite = _userRepository.isFavoriteListener(
       me: me,
@@ -1005,451 +1246,332 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
     final canRequestAccess = _canRequestAccess(
       me: me,
       user: user,
-      session: session,
+      session: effectiveSession,
     );
 
-    final canCall = _canCallNow(
+    final hasCallAccess = _sessionCallAllowedForDirection(
       me: me,
       user: user,
-      session: session,
+      session: effectiveSession,
     );
+    final callReadiness = _callRepository.callReadinessForKnownUsers(
+      me: me,
+      listener: user,
+      hasCallAccess: hasCallAccess,
+      requiredCredits: visibleRate,
+    );
+    final canCall = callReadiness.canStart &&
+        _canCallNow(
+          me: me,
+          user: user,
+          session: effectiveSession,
+        );
 
     final ratingAvg = user.ratingAvg;
     final ratingCount = user.ratingCount;
     final hasRating = ratingCount > 0;
+    final ratingCountLabel = ratingCount >= 1000
+        ? '${(ratingCount / 1000).toStringAsFixed(1)}k'
+        : '$ratingCount';
+    final ratingCopy = hasRating
+        ? '${_ratingLabel(ratingAvg)} ($ratingCountLabel reviews)'
+        : 'New listener';
 
-    final bio = user.bio.trim();
-    final topics = _safeStringList(user.topics);
-    final languages = _safeStringList(user.languages);
+    final bio = user.bio.trim().isEmpty
+        ? "I'm here to listen and support you. Let's talk and make you feel better."
+        : user.bio.trim();
+    final tags = _safeStringList(user.topics).isEmpty
+        ? const <String>['Empathetic', 'Friendly', 'Supportive']
+        : _safeStringList(user.topics).take(3).toList(growable: false);
 
-    final statusText = _hasBlockingCallState
-        ? 'Busy on your call'
-        : isBusy
-            ? 'Busy'
-            : 'Available now';
-    final statusColor = _hasBlockingCallState
-        ? const Color(0xFF4F46E5)
-        : isBusy
-            ? const Color(0xFFDC2626)
-            : const Color(0xFF15803D);
+    final safetyBlocked = _sessionBlocked(effectiveSession);
+    final callCtaLabel = callWorking
+        ? 'Calling...'
+        : _hasBlockingCallState
+            ? 'Call in progress'
+            : safetyBlocked
+                ? 'Chat unavailable'
+                : canCall
+                    ? 'Start Session'
+                    : callReadiness.label;
+    final canUseProfileActions =
+        !isMyOwnProfile && !_hasAnyActionRunning() && !_hasBlockingCallState;
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 20),
+    return Stack(
       children: [
-        _activeCallBanner(),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                Container(
-                  width: 82,
-                  height: 82,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [
-                        Color(0xFF6366F1),
-                        Color(0xFF8B5CF6),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    name.isNotEmpty ? name[0].toUpperCase() : 'L',
-                    style: const TextStyle(
-                      fontSize: 30,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  name,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                    color: Color(0xFF111827),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    _pillChip(
-                      statusText,
-                      background: statusColor.withValues(alpha: 0.10),
-                      foreground: statusColor,
-                      border: statusColor.withValues(alpha: 0.24),
-                    ),
-                    _pillChip('Level $level'),
-                    if (isFavorite)
-                      _pillChip(
-                        'Favorite',
-                        background: const Color(0xFFFFF7DB),
-                        foreground: const Color(0xFFB45309),
-                        border: const Color(0xFFFDE68A),
-                      ),
-                    if (isFollowing)
-                      _pillChip(
-                        'Following',
-                        background: const Color(0xFFECFEFF),
-                        foreground: const Color(0xFF0F766E),
-                        border: const Color(0xFFA5F3FC),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                if (hasRating)
+        const Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(color: AppPalette.pageBg),
+          ),
+        ),
+        ListView(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 112),
+          children: [
+            SafeArea(
+              bottom: false,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _activeCallBanner(),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        tooltip: 'Back',
+                        onPressed: () => Navigator.of(context).maybePop(),
+                        icon: const Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          color: AppPalette.textPrimary,
+                          size: 21,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (!isMyOwnProfile) _profileMenuButton(user),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Center(
+                    child: SizedBox(
+                      height: 238,
+                      width: 238,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: RadialGradient(
+                                colors: [
+                                  AppPalette.blue.withValues(alpha: 0.16),
+                                  AppPalette.blue.withValues(alpha: 0.05),
+                                  Colors.transparent,
+                                ],
+                              ),
+                              border: Border.all(
+                                color: AppPalette.blue.withValues(alpha: 0.14),
+                              ),
+                            ),
+                          ),
+                          ClipOval(child: _profileAvatar(user, 212)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppPalette.textPrimary,
+                            fontSize: 25,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Icon(
+                        Icons.verified_rounded,
+                        color: Color(0xFF2E7DFF),
+                        size: 21,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
                     children: [
                       const Icon(
                         Icons.star_rounded,
-                        color: Color(0xFFF59E0B),
-                        size: 20,
+                        color: AppPalette.star,
+                        size: 19,
                       ),
-                      const SizedBox(width: 6),
-                      Text(
-                        _ratingLabel(ratingAvg),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 16,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '($ratingCount review${ratingCount == 1 ? '' : 's'})',
-                        style: const TextStyle(
-                          color: Color(0xFF6B7280),
-                          fontWeight: FontWeight.w700,
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          ratingCopy,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppPalette.textPrimary,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13.5,
+                          ),
                         ),
                       ),
                     ],
-                  )
-                else
-                  const Text(
-                    'No ratings yet',
-                    style: TextStyle(
-                      color: Color(0xFF6B7280),
-                      fontWeight: FontWeight.w700,
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    decoration: BoxDecoration(
+                      color: AppPalette.card,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppPalette.border),
+                    ),
+                    child: Row(
+                      children: [
+                        _profileStat(value: '$followers', label: 'Sessions'),
+                        Container(
+                          width: 1,
+                          height: 34,
+                          color: AppPalette.border,
+                        ),
+                        _profileStat(
+                          value: hasRating ? _ratingLabel(ratingAvg) : '0.0',
+                          label: 'Rating',
+                        ),
+                        Container(
+                          width: 1,
+                          height: 34,
+                          color: AppPalette.border,
+                        ),
+                        _profileStat(value: '$level', label: 'Years'),
+                      ],
                     ),
                   ),
-                if (bio.isNotEmpty) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 18),
+                  const Text(
+                    'About',
+                    style: TextStyle(
+                      color: AppPalette.textPrimary,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   Text(
                     bio,
-                    textAlign: TextAlign.center,
                     style: const TextStyle(
-                      color: Color(0xFF374151),
+                      color: AppPalette.textSecondary,
                       fontWeight: FontWeight.w600,
-                      height: 1.45,
+                      height: 1.38,
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: tags.map((tag) => _pillChip(tag)).toList(),
+                  ),
+                  if (!isMyOwnProfile) ...[
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        _smallActionTile(
+                          icon: Icons.chat_bubble_outline_rounded,
+                          label: requestWorking ? 'Wait' : 'Chat',
+                          working: requestWorking,
+                          onTap: canRequestAccess
+                              ? () => _openChat(me: me, user: user)
+                              : null,
+                        ),
+                        const SizedBox(width: 10),
+                        _smallActionTile(
+                          icon: isFollowing
+                              ? Icons.person_remove_alt_1_rounded
+                              : Icons.person_add_alt_1_rounded,
+                          label: followWorking
+                              ? 'Wait'
+                              : (isFollowing ? 'Following' : 'Follow'),
+                          selected: isFollowing,
+                          working: followWorking,
+                          onTap: canUseProfileActions && !followWorking
+                              ? () => _toggleFollow(
+                                    listenerId: user.uid,
+                                    isFollowing: isFollowing,
+                                  )
+                              : null,
+                        ),
+                        const SizedBox(width: 10),
+                        _smallActionTile(
+                          icon: isFavorite
+                              ? Icons.favorite_rounded
+                              : Icons.favorite_border_rounded,
+                          label: favoriteWorking
+                              ? 'Wait'
+                              : (isFavorite ? 'Saved' : 'Favorite'),
+                          selected: isFavorite,
+                          working: favoriteWorking,
+                          onTap: canUseProfileActions && !favoriteWorking
+                              ? () => _toggleFavorite(
+                                    listenerId: user.uid,
+                                    isFavorite: isFavorite,
+                                  )
+                              : null,
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (!isMyOwnProfile) ...[
+                    const SizedBox(height: 20),
+                    Container(
+                      height: 54,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: AppPalette.blue,
+                        borderRadius: BorderRadius.circular(15),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppPalette.blue.withValues(alpha: 0.22),
+                            blurRadius: 18,
+                            offset: const Offset(0, 9),
+                          ),
+                        ],
+                      ),
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          disabledBackgroundColor: Colors.transparent,
+                          shadowColor: Colors.transparent,
+                          foregroundColor: FriendifyBrand.pureWhite,
+                          disabledForegroundColor:
+                              FriendifyBrand.pureWhite.withValues(alpha: 0.52),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(15),
+                          ),
+                        ),
+                        onPressed: canCall
+                            ? () => _startCall(
+                                  me: me,
+                                  listenerId: user.uid,
+                                  visibleRate: visibleRate,
+                                  session: effectiveSession,
+                                )
+                            : null,
+                        child: Text(
+                          canCall && !callWorking
+                              ? 'Start Session - Rs $visibleRate/min'
+                              : '$callCtaLabel - Rs $visibleRate/min',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (!canCall && callReadiness.message.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        callReadiness.message,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: AppPalette.textSecondary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          height: 1.25,
+                        ),
+                      ),
+                    ],
+                  ],
                 ],
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        if (_hasBlockingCallState) ...[
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: _callStateColor().withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: _callStateColor().withValues(alpha: 0.22),
               ),
-            ),
-            child: Text(
-              'New actions are limited while your call state is ${_callSession.state.name}.',
-              style: TextStyle(
-                color: _callStateColor(),
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-        ],
-        if (!isMyOwnProfile) ...[
-          _accessStatusCard(
-            me: me,
-            user: user,
-            session: session,
-          ),
-          const SizedBox(height: 12),
-        ],
-        GridView.count(
-          crossAxisCount: 2,
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          childAspectRatio: 1.55,
-          children: [
-            _metricCard(
-              icon: Icons.groups_rounded,
-              label: 'Followers',
-              value: '$followers',
-              color: const Color(0xFF4F46E5),
-            ),
-            _metricCard(
-              icon: Icons.sell_rounded,
-              label: 'Visible price',
-              value: '₹$visibleRate/min',
-              color: const Color(0xFF15803D),
-            ),
-            _metricCard(
-              icon: Icons.account_balance_wallet_rounded,
-              label: 'Listener earns',
-              value: '₹$listenerEarn/min',
-              color: const Color(0xFF7C3AED),
-            ),
-            _metricCard(
-              icon: Icons.business_center_rounded,
-              label: 'Platform keeps',
-              value: '₹$platformKeep/min',
-              color: const Color(0xFFD97706),
             ),
           ],
         ),
-        const SizedBox(height: 12),
-        _infoSection(
-          title: 'Topics',
-          child: topics.isEmpty
-              ? const Text(
-                  'No topics added yet.',
-                  style: TextStyle(
-                    color: Color(0xFF6B7280),
-                    fontWeight: FontWeight.w600,
-                  ),
-                )
-              : Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: topics.map((e) => _pillChip(e)).toList(),
-                ),
-        ),
-        const SizedBox(height: 12),
-        _infoSection(
-          title: 'Languages',
-          child: languages.isEmpty
-              ? const Text(
-                  'No languages added yet.',
-                  style: TextStyle(
-                    color: Color(0xFF6B7280),
-                    fontWeight: FontWeight.w600,
-                  ),
-                )
-              : Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: languages.map((e) => _pillChip(e)).toList(),
-                ),
-        ),
-        const SizedBox(height: 12),
-        _infoSection(
-          title: 'Billing',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'You pay: ₹$visibleRate per full minute',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF111827),
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Listener earns: ₹$listenerEarn per full minute',
-                style: const TextStyle(
-                  color: Color(0xFF6B7280),
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Friendify keeps: ₹$platformKeep per full minute',
-                style: const TextStyle(
-                  color: Color(0xFF6B7280),
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
-                ),
-                child: const Text(
-                  'Billing starts after 60 seconds. Full minutes only.',
-                  style: TextStyle(
-                    color: Color(0xFF374151),
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        if (!isMyOwnProfile) ...[
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: canCall
-                ? () => _startCall(
-                      me: me,
-                      listenerId: user.uid,
-                      visibleRate: visibleRate,
-                      session: session,
-                    )
-                : null,
-            icon: Icon(
-              _hasBlockingCallState
-                  ? Icons.call_rounded
-                  : _sessionCallAllowed(session)
-                      ? Icons.call_rounded
-                      : Icons.lock_rounded,
-            ),
-            label: Text(
-              callWorking
-                  ? 'Calling...'
-                  : _hasBlockingCallState
-                      ? 'Call In Progress'
-                      : _sessionCallAllowed(session)
-                          ? (isBusy ? 'Busy' : 'Call Now')
-                          : 'Call Locked',
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: canRequestAccess
-                      ? () => _openChat(
-                            me: me,
-                            user: user,
-                          )
-                      : null,
-                  icon: requestWorking
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.chat_bubble_outline_rounded),
-                  label: Text(
-                    requestWorking
-                        ? 'Please wait...'
-                        : _sessionExists(session)
-                            ? 'Open Chat'
-                            : 'Start Chat First',
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          if (!_sessionExists(session) &&
-              !_hasBlockingCallState &&
-              !_sessionBlocked(session) &&
-              _sessionLooksCanonical(me: me, user: user, session: session)) ...[
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: canRequestAccess
-                    ? () => _requestChatAccess(
-                          me: me,
-                          user: user,
-                        )
-                    : null,
-                icon: const Icon(Icons.mark_chat_read_rounded),
-                label: const Text('Send Chat Request'),
-              ),
-            ),
-            const SizedBox(height: 10),
-          ],
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: (!_hasAnyActionRunning() &&
-                          !_hasBlockingCallState &&
-                          !followWorking)
-                      ? () => _toggleFollow(
-                            listenerId: user.uid,
-                            isFollowing: isFollowing,
-                          )
-                      : null,
-                  icon: Icon(
-                    isFollowing
-                        ? Icons.person_remove_alt_1_rounded
-                        : Icons.person_add_alt_1_rounded,
-                  ),
-                  label: Text(
-                    followWorking
-                        ? 'Please wait...'
-                        : (isFollowing ? 'Unfollow' : 'Follow'),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: (!_hasAnyActionRunning() &&
-                          !_hasBlockingCallState &&
-                          !favoriteWorking)
-                      ? () => _toggleFavorite(
-                            listenerId: user.uid,
-                            isFavorite: isFavorite,
-                          )
-                      : null,
-                  icon: Icon(
-                    isFavorite
-                        ? Icons.star_rounded
-                        : Icons.star_border_rounded,
-                    color: isFavorite ? const Color(0xFFF59E0B) : null,
-                  ),
-                  label: Text(
-                    favoriteWorking
-                        ? 'Please wait...'
-                        : (isFavorite ? 'Unfavorite' : 'Favorite'),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Your usable credit: ₹${me.usableCredits}',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0xFF6B7280),
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-        if (kDebugMode) ...[
-          const SizedBox(height: 12),
-          Text(
-            'Debug → uid=${user.uid}, isAvailable=${user.isAvailable}, activeCallId=${user.activeCallId}, ratingCount=${user.ratingCount}, sessionExists=${_sessionExists(session)}, chatStatus=${_sessionStatus(session)}, callAllowed=${_sessionCallAllowed(session)}, canonical=${_sessionLooksCanonical(me: me, user: user, session: session)}, localCallState=${_callSession.state.name}',
-            style: const TextStyle(
-              color: Colors.black45,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
       ],
     );
   }
@@ -1464,6 +1586,7 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
           builder: (_, meSnap) {
             if (!meSnap.hasData) {
               return const Scaffold(
+                backgroundColor: AppPalette.pageBg,
                 body: Center(child: CircularProgressIndicator()),
               );
             }
@@ -1478,16 +1601,20 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
 
                 if (user == null) {
                   return Scaffold(
-                    backgroundColor: const Color(0xFFF8FAFC),
+                    backgroundColor: AppPalette.pageBg,
                     appBar: AppBar(
                       elevation: 0,
                       scrolledUnderElevation: 0,
-                      backgroundColor: Colors.white,
-                      surfaceTintColor: Colors.white,
+                      backgroundColor: Colors.transparent,
+                      surfaceTintColor: Colors.transparent,
+                      foregroundColor: AppPalette.textPrimary,
                       title: const Text('Listener Profile'),
                     ),
                     body: const Center(
-                      child: Text('Listener not found.'),
+                      child: Text(
+                        'Listener not found.',
+                        style: TextStyle(color: AppPalette.textPrimary),
+                      ),
                     ),
                   );
                 }
@@ -1496,18 +1623,14 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
 
                 if (isMyOwnProfile) {
                   return Scaffold(
-                    backgroundColor: const Color(0xFFF8FAFC),
-                    appBar: AppBar(
-                      elevation: 0,
-                      scrolledUnderElevation: 0,
-                      backgroundColor: Colors.white,
-                      surfaceTintColor: Colors.white,
-                      title: const Text('Listener Profile'),
-                    ),
-                    body: _buildBody(
-                      me: me,
-                      user: user,
-                      session: const <String, dynamic>{},
+                    backgroundColor: AppPalette.pageBg,
+                    body: DecoratedBox(
+                      decoration: const BoxDecoration(color: AppPalette.pageBg),
+                      child: _buildBody(
+                        me: me,
+                        user: user,
+                        session: const <String, dynamic>{},
+                      ),
                     ),
                   );
                 }
@@ -1524,6 +1647,11 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
                         <String, dynamic>{
                           FirestorePaths.fieldSpeakerId: me.uid,
                           FirestorePaths.fieldListenerId: user.uid,
+                          FirestorePaths.fieldParticipantIds: <String>[
+                            ...(<String>[me.uid, user.uid]..sort()),
+                          ],
+                          FirestorePaths.fieldPairKey: expectedDocId,
+                          FirestorePaths.fieldActualListenerId: user.uid,
                           FirestorePaths.fieldChatStatus:
                               FirestorePaths.chatStatusNone,
                           FirestorePaths.fieldCallAllowed: false,
@@ -1535,18 +1663,14 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
                         };
 
                     return Scaffold(
-                      backgroundColor: const Color(0xFFF8FAFC),
-                      appBar: AppBar(
-                        elevation: 0,
-                        scrolledUnderElevation: 0,
-                        backgroundColor: Colors.white,
-                        surfaceTintColor: Colors.white,
-                        title: const Text('Listener Profile'),
-                      ),
-                      body: _buildBody(
-                        me: me,
-                        user: user,
-                        session: session,
+                      backgroundColor: AppPalette.pageBg,
+                      body: DecoratedBox(
+                        decoration: const BoxDecoration(color: AppPalette.pageBg),
+                        child: _buildBody(
+                          me: me,
+                          user: user,
+                          session: session,
+                        ),
                       ),
                     );
                   },
