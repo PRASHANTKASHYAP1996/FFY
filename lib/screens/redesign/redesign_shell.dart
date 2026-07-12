@@ -3,12 +3,15 @@ import 'package:flutter/services.dart';
 
 import '../../core/theme/app_palette.dart';
 import '../../repositories/call_repository.dart';
+import '../../repositories/social_repository.dart';
 import '../../repositories/user_repository.dart';
 import '../../shared/models/app_user_model.dart';
+import '../../shared/models/social_post_model.dart';
 import '../call_history_screen.dart';
 import '../chat_conversation_screen.dart';
 import '../help_support_screen.dart';
 import '../listener_profile_screen.dart';
+import '../post_detail_screen.dart';
 import '../profile_screen.dart';
 import '../wallet_details_screen.dart';
 
@@ -33,11 +36,7 @@ class _RedesignShellState extends State<RedesignShell> {
       title: 'Call',
       subtitle: 'Quick match and your call history.',
     ),
-    _PlaceholderPage(
-      icon: Icons.auto_awesome_rounded,
-      title: 'Feed',
-      subtitle: 'Posts from people you follow.',
-    ),
+    _FeedPage(),
     _MePage(),
   ];
 
@@ -854,6 +853,388 @@ class _ChatsPageState extends State<_ChatsPage> {
           ),
         );
       },
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Feed (posts from people you follow — every post routes back to a call)
+// ---------------------------------------------------------------------------
+
+String _timeAgo(int ms) {
+  if (ms <= 0) return '';
+  final diff = DateTime.now().millisecondsSinceEpoch - ms;
+  if (diff < 60000) return 'now';
+  final mins = diff ~/ 60000;
+  if (mins < 60) return '${mins}m';
+  final hours = mins ~/ 60;
+  if (hours < 24) return '${hours}h';
+  final days = hours ~/ 24;
+  if (days < 7) return '${days}d';
+  if (days < 35) return '${days ~/ 7}w';
+  if (days < 365) return '${days ~/ 30}mo';
+  return '${days ~/ 365}y';
+}
+
+class _FeedPage extends StatefulWidget {
+  const _FeedPage();
+
+  @override
+  State<_FeedPage> createState() => _FeedPageState();
+}
+
+class _FeedPageState extends State<_FeedPage> {
+  final Stream<AppUserModel?> _me = UserRepository.instance.watchMe();
+  final Stream<List<SocialPostModel>> _posts =
+      SocialRepository.instance.watchFeedPosts();
+
+  void _openComposer() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ProfileScreen()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      bottom: false,
+      child: StreamBuilder<AppUserModel?>(
+        stream: _me,
+        builder: (context, meSnap) {
+          final me = meSnap.data;
+          final myUid = me?.uid ?? '';
+          final following = me?.following ?? const <String>[];
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _header(me),
+              Expanded(
+                child: StreamBuilder<List<SocialPostModel>>(
+                  stream: _posts,
+                  builder: (context, snap) {
+                    if (snap.connectionState == ConnectionState.waiting &&
+                        !snap.hasData) {
+                      return const Center(
+                        child: SizedBox(
+                          width: 26,
+                          height: 26,
+                          child: CircularProgressIndicator(
+                            color: AppPalette.blue,
+                            strokeWidth: 2.5,
+                          ),
+                        ),
+                      );
+                    }
+                    final all = snap.data ?? const <SocialPostModel>[];
+                    final visible = all
+                        .where((p) =>
+                            p.ownerId == myUid || following.contains(p.ownerId))
+                        .toList(growable: false);
+                    if (visible.isEmpty) {
+                      return const _DiscoverMessage(
+                        'Your feed is quiet 🌙\n'
+                        'Follow people from Discover to see what they share.',
+                      );
+                    }
+                    return ListView.builder(
+                      padding: const EdgeInsets.only(top: 10, bottom: 24),
+                      itemCount: visible.length,
+                      itemBuilder: (context, i) =>
+                          _FeedPostCard(post: visible[i]),
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _header(AppUserModel? me) {
+    final name = me?.safeDisplayName ?? '';
+    return Container(
+      color: AppPalette.card,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Feed',
+            style: TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.w700,
+              color: AppPalette.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          InkWell(
+            onTap: _openComposer,
+            borderRadius: BorderRadius.circular(999),
+            child: Row(
+              children: [
+                _Avatar(
+                  initials: _initialsFromName(name.isEmpty ? 'U' : name),
+                  photoUrl: me?.photoURL,
+                  size: 38,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppPalette.feedBg,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: const Text(
+                      "Share what's on your mind…",
+                      style:
+                          TextStyle(fontSize: 13, color: AppPalette.textMuted),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FeedPostCard extends StatefulWidget {
+  const _FeedPostCard({required this.post});
+  final SocialPostModel post;
+
+  @override
+  State<_FeedPostCard> createState() => _FeedPostCardState();
+}
+
+class _FeedPostCardState extends State<_FeedPostCard> {
+  final SocialRepository _social = SocialRepository.instance;
+  bool? _likedOverride;
+  bool _busy = false;
+
+  SocialPostModel get _post => widget.post;
+
+  void _openDetail() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => PostDetailScreen(initialPost: _post)),
+    );
+  }
+
+  void _openOwner() {
+    if (_post.ownerId.isEmpty) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ListenerProfileScreen(listenerId: _post.ownerId),
+      ),
+    );
+  }
+
+  Future<void> _toggleLike(bool liked) async {
+    if (_busy) return;
+    setState(() {
+      _likedOverride = !liked;
+      _busy = true;
+    });
+    try {
+      if (liked) {
+        await _social.unlikePost(_post.postId);
+      } else {
+        await _social.likePost(_post.postId);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _likedOverride = liked);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      decoration: AppPalette.cardDecoration(radius: 16),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _cardHeader(),
+          GestureDetector(
+            onTap: _openDetail,
+            child: AspectRatio(
+              aspectRatio: 4 / 3,
+              child: Image.network(
+                _post.imageURL,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  color: AppPalette.feedBg,
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.image_not_supported_outlined,
+                      color: AppPalette.textMuted, size: 30),
+                ),
+                loadingBuilder: (context, child, progress) => progress == null
+                    ? child
+                    : Container(
+                        color: AppPalette.feedBg,
+                        alignment: Alignment.center,
+                        child: const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            color: AppPalette.blue,
+                            strokeWidth: 2,
+                          ),
+                        ),
+                      ),
+              ),
+            ),
+          ),
+          if (_post.caption.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+              child: Text(
+                _post.caption,
+                style: const TextStyle(
+                  fontSize: 14,
+                  height: 1.35,
+                  color: AppPalette.textPrimary,
+                ),
+              ),
+            ),
+          _actions(),
+        ],
+      ),
+    );
+  }
+
+  Widget _cardHeader() {
+    return InkWell(
+      onTap: _openOwner,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+        child: Row(
+          children: [
+            _Avatar(
+              initials: _initialsFromName(
+                  _post.ownerName.isEmpty ? 'U' : _post.ownerName),
+              photoUrl: _post.ownerPhotoURL,
+              size: 40,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _post.ownerName.isEmpty ? 'Someone' : _post.ownerName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: AppPalette.textPrimary,
+                ),
+              ),
+            ),
+            Text(
+              _timeAgo(_post.createdAtMs),
+              style:
+                  const TextStyle(fontSize: 12, color: AppPalette.textMuted),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _actions() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 6, 12, 10),
+      child: Row(
+        children: [
+          StreamBuilder<bool>(
+            stream: _social.watchPostLikedByMe(_post.postId),
+            builder: (context, snap) {
+              final serverLiked = snap.data ?? false;
+              final liked = _likedOverride ?? serverLiked;
+              return InkWell(
+                borderRadius: BorderRadius.circular(999),
+                onTap: () => _toggleLike(liked),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 6),
+                  child: Row(
+                    children: [
+                      Icon(
+                        liked
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
+                        size: 22,
+                        color: liked ? AppPalette.rose : AppPalette.textSecondary,
+                      ),
+                      if (_post.likeCount > 0) ...[
+                        const SizedBox(width: 5),
+                        Text(
+                          '${_post.likeCount}',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: AppPalette.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+          InkWell(
+            borderRadius: BorderRadius.circular(999),
+            onTap: _openDetail,
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              child: Row(
+                children: [
+                  const Icon(Icons.chat_bubble_outline_rounded,
+                      size: 20, color: AppPalette.textSecondary),
+                  if (_post.commentCount > 0) ...[
+                    const SizedBox(width: 5),
+                    Text(
+                      '${_post.commentCount}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppPalette.textSecondary,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          const Spacer(),
+          FilledButton.icon(
+            onPressed: _openOwner,
+            style: FilledButton.styleFrom(
+              backgroundColor: AppPalette.blue,
+              foregroundColor: Colors.white,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              minimumSize: const Size(0, 0),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            icon: const Icon(Icons.phone_rounded, size: 16),
+            label: const Text(
+              'Talk to them',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
