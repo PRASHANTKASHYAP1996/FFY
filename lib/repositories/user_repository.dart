@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../core/constants/firestore_paths.dart';
 import '../services/firestore_service.dart';
+import '../shared/listener_availability.dart';
 import '../shared/models/app_user_model.dart';
 
 class UserRepository {
@@ -10,8 +13,8 @@ class UserRepository {
 
   static final UserRepository instance = UserRepository._();
 
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  FirebaseAuth get _auth => FirebaseAuth.instance;
+  FirebaseFirestore get _db => FirebaseFirestore.instance;
 
   CollectionReference<Map<String, dynamic>> get _users =>
       _db.collection(FirestorePaths.users);
@@ -26,6 +29,43 @@ class UserRepository {
     final uid = _auth.currentUser?.uid.trim();
     if (uid == null || uid.isEmpty) return null;
     return uid;
+  }
+
+  Stream<T> _authBoundStream<T, S>({
+    required String uid,
+    required Stream<S> source,
+    required T signedOutValue,
+    required T Function(S event) convert,
+  }) {
+    final safeUid = uid.trim();
+    if (safeUid.isEmpty) {
+      return Stream<T>.value(signedOutValue).asBroadcastStream();
+    }
+
+    late StreamController<T> controller;
+    StreamSubscription<S>? subscription;
+
+    controller = StreamController<T>.broadcast(
+      onListen: () {
+        subscription = source.listen(
+          (event) {
+            if (myUidOrNull != safeUid) return;
+            if (controller.isClosed) return;
+            controller.add(convert(event));
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            if (myUidOrNull != safeUid) return;
+            if (controller.isClosed) return;
+            controller.addError(error, stackTrace);
+          },
+        );
+      },
+      onCancel: () async {
+        await subscription?.cancel();
+      },
+    );
+
+    return controller.stream;
   }
 
   String get myUid {
@@ -91,6 +131,11 @@ class UserRepository {
 
     if (uid.isEmpty) return null;
 
+    final rawCallAvailability = data[FirestorePaths.fieldCallAvailability];
+    final callAvailability = rawCallAvailability is Map
+        ? Map<String, dynamic>.from(rawCallAvailability)
+        : const <String, dynamic>{};
+
     final safe = <String, dynamic>{
       FirestorePaths.fieldUid: uid,
 
@@ -129,8 +174,21 @@ class UserRepository {
         data[FirestorePaths.fieldIsAvailable],
         fallback: false,
       ),
+      FirestorePaths.fieldCallAvailability: {
+        FirestorePaths.fieldOnlyChatMode: _safeBool(
+          callAvailability[FirestorePaths.fieldOnlyChatMode],
+          fallback: _safeBool(data[FirestorePaths.fieldOnlyChatMode]),
+        ),
+      },
+      FirestorePaths.fieldIsOnCall: _safeBool(
+        data[FirestorePaths.fieldIsOnCall],
+        fallback: false,
+      ),
       FirestorePaths.fieldAdminBlocked: _safeBool(
         data[FirestorePaths.fieldAdminBlocked],
+      ),
+      FirestorePaths.fieldAdminBlockReason: _safeString(
+        data[FirestorePaths.fieldAdminBlockReason],
       ),
       FirestorePaths.fieldHiddenFromDiscovery: _safeBool(
         data[FirestorePaths.fieldHiddenFromDiscovery],
@@ -175,6 +233,8 @@ class UserRepository {
       FirestorePaths.fieldActiveCallId: _safeString(
         data[FirestorePaths.fieldActiveCallId],
       ),
+      FirestorePaths.fieldActiveCallUpdatedAt:
+          data[FirestorePaths.fieldActiveCallUpdatedAt],
     };
 
     return safe;
@@ -230,8 +290,30 @@ class UserRepository {
     }
   }
 
-  bool _isBusy(AppUserModel user) {
-    return !user.isAvailable || user.hasActiveCall;
+  int _availabilityRank(AppUserModel user) {
+    switch (listenerAvailabilityForUser(user).kind) {
+      case ListenerAvailabilityKind.available:
+        return 0;
+      case ListenerAvailabilityKind.checking:
+        return 1;
+      case ListenerAvailabilityKind.offline:
+        return 2;
+      case ListenerAvailabilityKind.onAnotherCall:
+        return 3;
+    }
+  }
+
+  ListenerAvailabilityResult listenerAvailabilityForUser(
+    AppUserModel user, {
+    DateTime? now,
+  }) {
+    return ListenerAvailabilityResolver.resolve(
+      isAvailable: user.isAvailable,
+      isOnCall: user.isOnCall,
+      activeCallId: user.activeCallId,
+      lastSeen: user.lastSeen,
+      now: now,
+    );
   }
 
   bool _asBool(dynamic value, {bool fallback = false}) {
@@ -244,13 +326,38 @@ class UserRepository {
     return fallback;
   }
 
+  int _profileSignalScore(AppUserModel user) {
+    return user.marketplaceProfileScore;
+  }
+
+  int _compareProfileSignals(AppUserModel a, AppUserModel b) {
+    final profileCompare =
+        _profileSignalScore(b).compareTo(_profileSignalScore(a));
+    if (profileCompare != 0) return profileCompare;
+
+    final aHasPhoto = a.photoURL.trim().isNotEmpty;
+    final bHasPhoto = b.photoURL.trim().isNotEmpty;
+    if (aHasPhoto != bHasPhoto) return bHasPhoto ? 1 : -1;
+
+    final aHasBio = a.bio.trim().isNotEmpty;
+    final bHasBio = b.bio.trim().isNotEmpty;
+    if (aHasBio != bHasBio) return bHasBio ? 1 : -1;
+
+    final topicsCompare = b.topics.length.compareTo(a.topics.length);
+    if (topicsCompare != 0) return topicsCompare;
+
+    return b.languages.length.compareTo(a.languages.length);
+  }
+
   int _marketplaceScore(AppUserModel user) {
     final hasRatingsBoost = user.ratingCount > 0 ? 1 : 0;
+    final profileSignalScore = _profileSignalScore(user);
     final roundedRating = (user.ratingAvg * 100).round();
     final cheaperRateAdvantage = 1000 - user.listenerRate;
 
-    return (_isBusy(user) ? 0 : 1) * 100000000 +
+    return (2 - _availabilityRank(user)) * 100000000 +
         hasRatingsBoost * 10000000 +
+        profileSignalScore * 1000000 +
         roundedRating * 10000 +
         user.ratingCount * 100 +
         user.followersCount * 10 +
@@ -258,14 +365,19 @@ class UserRepository {
   }
 
   int _compareUsersForMarketplace(AppUserModel a, AppUserModel b) {
-    final aBusy = _isBusy(a);
-    final bBusy = _isBusy(b);
+    final aAvailabilityRank = _availabilityRank(a);
+    final bAvailabilityRank = _availabilityRank(b);
 
-    if (aBusy != bBusy) return aBusy ? 1 : -1;
+    if (aAvailabilityRank != bAvailabilityRank) {
+      return aAvailabilityRank.compareTo(bAvailabilityRank);
+    }
 
     final aHasRatings = a.ratingCount > 0;
     final bHasRatings = b.ratingCount > 0;
     if (aHasRatings != bHasRatings) return aHasRatings ? -1 : 1;
+
+    final profileCompare = _compareProfileSignals(a, b);
+    if (profileCompare != 0) return profileCompare;
 
     final ratingCompare = b.ratingAvg.compareTo(a.ratingAvg);
     if (ratingCompare != 0) return ratingCompare;
@@ -314,9 +426,8 @@ class UserRepository {
 
     await FirestoreService.ensureProfile(
       email: email.trim(),
-      displayName: (displayName ?? '').trim().isEmpty
-          ? null
-          : displayName!.trim(),
+      displayName:
+          (displayName ?? '').trim().isEmpty ? null : displayName!.trim(),
     );
 
     return cred;
@@ -338,10 +449,16 @@ class UserRepository {
   Stream<AppUserModel?> watchMe() {
     final uid = myUidOrNull;
     if (uid == null) {
-      return Stream<AppUserModel?>.value(null);
+      return Stream<AppUserModel?>.value(null).asBroadcastStream();
     }
 
-    return _users.doc(uid).snapshots().map(_safeUserFromDoc);
+    return _authBoundStream<AppUserModel?,
+        DocumentSnapshot<Map<String, dynamic>>>(
+      uid: uid,
+      source: _users.doc(uid).snapshots(),
+      signedOutValue: null,
+      convert: _safeUserFromDoc,
+    );
   }
 
   Future<AppUserModel?> getMe() async {
@@ -355,12 +472,18 @@ class UserRepository {
   Stream<AppUserModel?> watchUser(String uid) {
     final safeUid = uid.trim();
     if (safeUid.isEmpty) {
-      return Stream<AppUserModel?>.value(null);
+      return Stream<AppUserModel?>.value(null).asBroadcastStream();
     }
 
     final myUid = myUidOrNull;
     if (myUid != null && myUid == safeUid) {
-      return _users.doc(safeUid).snapshots().map(_safeUserFromDoc);
+      return _authBoundStream<AppUserModel?,
+          DocumentSnapshot<Map<String, dynamic>>>(
+        uid: myUid,
+        source: _users.doc(safeUid).snapshots(),
+        signedOutValue: null,
+        convert: _safeUserFromDoc,
+      );
     }
 
     return _publicUsers.doc(safeUid).snapshots().map(_safePublicUserFromDoc);
@@ -403,6 +526,27 @@ class UserRepository {
     });
   }
 
+  /// Anonymized public reviews for a listener (stars + comment + date only).
+  Stream<List<Map<String, dynamic>>> watchListenerReviews(
+    String listenerId, {
+    int limit = 20,
+  }) {
+    final safeId = listenerId.trim();
+    if (safeId.isEmpty) {
+      return Stream<List<Map<String, dynamic>>>.value(
+        const <Map<String, dynamic>>[],
+      );
+    }
+
+    return _publicUsers
+        .doc(safeId)
+        .collection('reviews')
+        .orderBy('createdAtMs', descending: true)
+        .limit(limit < 1 ? 1 : limit)
+        .snapshots()
+        .map((query) => query.docs.map((d) => d.data()).toList());
+  }
+
   Stream<List<Map<String, dynamic>>> watchListenerChatRequests({
     int limit = 100,
   }) {
@@ -410,30 +554,38 @@ class UserRepository {
     if (uid == null) {
       return Stream<List<Map<String, dynamic>>>.value(
         const <Map<String, dynamic>>[],
-      );
+      ).asBroadcastStream();
     }
 
     final safeLimit = limit < 1 ? 1 : limit;
 
-    return _chatSessions
+    final source = _chatSessions
+        .where(FirestorePaths.fieldParticipantIds, arrayContains: uid)
         .where(FirestorePaths.fieldPendingFor, isEqualTo: uid)
         .where(FirestorePaths.fieldCallRequestOpen, isEqualTo: true)
         .orderBy(FirestorePaths.fieldChatUpdatedAtMs, descending: true)
         .limit(safeLimit)
-        .snapshots()
-        .map((query) {
-      final out = <Map<String, dynamic>>[];
+        .snapshots();
 
-      for (final doc in query.docs) {
-        final data = doc.data();
-        out.add({
-          'id': doc.id,
-          ...data,
-        });
-      }
+    return _authBoundStream<List<Map<String, dynamic>>,
+        QuerySnapshot<Map<String, dynamic>>>(
+      uid: uid,
+      source: source,
+      signedOutValue: const <Map<String, dynamic>>[],
+      convert: (query) {
+        final out = <Map<String, dynamic>>[];
 
-      return out;
-    });
+        for (final doc in query.docs) {
+          final data = doc.data();
+          out.add({
+            'id': doc.id,
+            ...data,
+          });
+        }
+
+        return out;
+      },
+    );
   }
 
   Future<List<Map<String, dynamic>>> getListenerChatRequests({
@@ -445,15 +597,14 @@ class UserRepository {
     final safeLimit = limit < 1 ? 1 : limit;
 
     final query = await _chatSessions
+        .where(FirestorePaths.fieldParticipantIds, arrayContains: uid)
         .where(FirestorePaths.fieldPendingFor, isEqualTo: uid)
         .where(FirestorePaths.fieldCallRequestOpen, isEqualTo: true)
         .orderBy(FirestorePaths.fieldChatUpdatedAtMs, descending: true)
         .limit(safeLimit)
         .get();
 
-    return query.docs
-        .map((doc) => {'id': doc.id, ...doc.data()})
-        .toList();
+    return query.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
   }
 
   Future<bool> didListenerAllowCall({
@@ -466,9 +617,7 @@ class UserRepository {
     if (safeSpeakerId.isEmpty || safeListenerId.isEmpty) return false;
 
     final ids = <String>[safeSpeakerId, safeListenerId]..sort();
-    final snap = await _chatSessions
-        .doc('${ids[0]}_${ids[1]}')
-        .get();
+    final snap = await _chatSessions.doc('${ids[0]}_${ids[1]}').get();
 
     if (!snap.exists) return false;
 
@@ -501,9 +650,12 @@ class UserRepository {
   }) {
     final out = List<AppUserModel>.from(listeners)
       ..sort((a, b) {
-        final busyCompare =
-            (_isBusy(a) ? 1 : 0).compareTo(_isBusy(b) ? 1 : 0);
-        if (busyCompare != 0) return busyCompare;
+        final availabilityCompare =
+            _availabilityRank(a).compareTo(_availabilityRank(b));
+        if (availabilityCompare != 0) return availabilityCompare;
+
+        final profileCompare = _compareProfileSignals(a, b);
+        if (profileCompare != 0) return profileCompare;
 
         final ratingCompare = b.ratingAvg.compareTo(a.ratingAvg);
         if (ratingCompare != 0) return ratingCompare;
@@ -527,9 +679,12 @@ class UserRepository {
   }) {
     final out = List<AppUserModel>.from(listeners)
       ..sort((a, b) {
-        final busyCompare =
-            (_isBusy(a) ? 1 : 0).compareTo(_isBusy(b) ? 1 : 0);
-        if (busyCompare != 0) return busyCompare;
+        final availabilityCompare =
+            _availabilityRank(a).compareTo(_availabilityRank(b));
+        if (availabilityCompare != 0) return availabilityCompare;
+
+        final profileCompare = _compareProfileSignals(a, b);
+        if (profileCompare != 0) return profileCompare;
 
         final countCompare = b.ratingCount.compareTo(a.ratingCount);
         if (countCompare != 0) return countCompare;
@@ -553,12 +708,15 @@ class UserRepository {
   }) {
     final out = List<AppUserModel>.from(listeners)
       ..sort((a, b) {
-        final busyCompare =
-            (_isBusy(a) ? 1 : 0).compareTo(_isBusy(b) ? 1 : 0);
-        if (busyCompare != 0) return busyCompare;
+        final availabilityCompare =
+            _availabilityRank(a).compareTo(_availabilityRank(b));
+        if (availabilityCompare != 0) return availabilityCompare;
 
         final rateCompare = a.listenerRate.compareTo(b.listenerRate);
         if (rateCompare != 0) return rateCompare;
+
+        final profileCompare = _compareProfileSignals(a, b);
+        if (profileCompare != 0) return profileCompare;
 
         final ratingCompare = b.ratingAvg.compareTo(a.ratingAvg);
         if (ratingCompare != 0) return ratingCompare;
@@ -639,6 +797,10 @@ class UserRepository {
     return FirestoreService.setAvailability(available);
   }
 
+  Future<void> setOnlyChatMode(bool enabled) {
+    return FirestoreService.setOnlyChatMode(enabled);
+  }
+
   Future<void> setListenerRate(int value) {
     return FirestoreService.setListenerRate(value);
   }
@@ -699,7 +861,7 @@ class UserRepository {
   Future<bool> hasActiveCallNow() async {
     final me = await getMe();
     if (me == null) return false;
-    return me.hasActiveCall || me.activeCallId.trim().isNotEmpty;
+    return me.isOnCall || me.hasCallReference;
   }
 
   Future<bool> canCallListenerNow({
@@ -712,13 +874,14 @@ class UserRepository {
     final safeListenerId = listenerId.trim();
     if (safeListenerId.isEmpty) return false;
     if (me.uid == safeListenerId) return false;
-    if (me.hasActiveCall || me.activeCallId.trim().isNotEmpty) return false;
+    if (me.isOnCall) return false;
     if (usableCreditsFromUser(me) < requiredCredits) return false;
     if (me.blocked.contains(safeListenerId)) return false;
 
     final listener = await getUser(safeListenerId);
     if (listener == null) return false;
-    if (!listener.isAvailable) return false;
+    final availability = listenerAvailabilityForUser(listener);
+    if (!availability.canCallNow) return false;
 
     return true;
   }

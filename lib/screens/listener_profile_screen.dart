@@ -1567,12 +1567,98 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
                       ),
                     ],
                   ],
+                  _reviewsSection(user.uid),
                 ],
               ),
             ),
           ],
         ),
       ],
+    );
+  }
+
+  Widget _reviewsSection(String listenerId) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 22),
+        const Text(
+          'Reviews',
+          style: TextStyle(
+            color: AppPalette.textPrimary,
+            fontWeight: FontWeight.w900,
+            fontSize: 14,
+          ),
+        ),
+        const SizedBox(height: 10),
+        StreamBuilder<List<Map<String, dynamic>>>(
+          stream: _userRepository.watchListenerReviews(listenerId),
+          builder: (context, snapshot) {
+            final reviews = snapshot.data ?? const <Map<String, dynamic>>[];
+            if (reviews.isEmpty) {
+              return const Text(
+                'No reviews yet.',
+                style: TextStyle(
+                  color: AppPalette.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+              );
+            }
+            return Column(
+              children: reviews.map(_reviewCard).toList(),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _reviewCard(Map<String, dynamic> data) {
+    final rawStars = data['stars'];
+    final stars = rawStars is num ? rawStars.toInt() : 0;
+    final comment = data['comment'] is String
+        ? (data['comment'] as String).trim()
+        : '';
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(13),
+      decoration: AppPalette.cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: List.generate(5, (i) {
+              return Icon(
+                i < stars ? Icons.star_rounded : Icons.star_outline_rounded,
+                size: 16,
+                color: AppPalette.star,
+              );
+            }),
+          ),
+          if (comment.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              comment,
+              style: const TextStyle(
+                color: AppPalette.textPrimary,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+          ],
+          const SizedBox(height: 6),
+          const Text(
+            'anon',
+            style: TextStyle(
+              color: AppPalette.textMuted,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

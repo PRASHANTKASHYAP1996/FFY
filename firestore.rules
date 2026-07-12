@@ -18,6 +18,10 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).changedKeys();
     }
 
+    function affectedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
     function validRate(rate) {
       return rate is int && rate in [5, 10, 20, 50, 100];
     }
@@ -70,6 +74,22 @@ service cloud.firestore {
         );
     }
 
+    function isOtherCallParticipant(callId, otherUserId) {
+      return signedIn()
+        && callExists(callId)
+        && otherUserId is string
+        && (
+          (
+            callDoc(callId).data.callerId == uid() &&
+            callDoc(callId).data.calleeId == otherUserId
+          ) ||
+          (
+            callDoc(callId).data.calleeId == uid() &&
+            callDoc(callId).data.callerId == otherUserId
+          )
+        );
+    }
+
     function isCallParticipantByResource() {
       return signedIn()
         && (
@@ -78,19 +98,71 @@ service cloud.firestore {
         );
     }
 
-    function validStringList(fieldName) {
+    function listSizeAtMost(fieldName, maxSize) {
       return !(fieldName in request.resource.data) ||
-        request.resource.data[fieldName] is list;
+        !(request.resource.data[fieldName] is list) ||
+        request.resource.data[fieldName].size() <= maxSize;
     }
 
-    function validOptionalString(fieldName) {
-      return !(fieldName in request.resource.data) ||
-        request.resource.data[fieldName] is string;
+    function affects(fieldName) {
+      return affectedKeys().hasAny([fieldName]);
     }
 
-    function validOptionalBool(fieldName) {
-      return !(fieldName in request.resource.data) ||
-        request.resource.data[fieldName] is bool;
+    function protectedFieldUnchangedIfPresent(fieldName) {
+      return !(fieldName in resource.data) ||
+        request.resource.data[fieldName] == resource.data[fieldName];
+    }
+
+    function validAffectedStringList(fieldName) {
+      return !affects(fieldName) ||
+        (
+          fieldName in request.resource.data &&
+          request.resource.data[fieldName] is list
+        );
+    }
+
+    function validAffectedOptionalString(fieldName) {
+      return !affects(fieldName) ||
+        (
+          fieldName in request.resource.data &&
+          request.resource.data[fieldName] is string
+        );
+    }
+
+    function validAffectedOptionalBool(fieldName) {
+      return !affects(fieldName) ||
+        (
+          fieldName in request.resource.data &&
+          request.resource.data[fieldName] is bool
+        );
+    }
+
+    function validAffectedRate(fieldName) {
+      return !affects(fieldName) ||
+        (
+          fieldName in request.resource.data &&
+          validRate(request.resource.data[fieldName])
+        );
+    }
+
+    function validCallAvailability(data, userId) {
+      return data is map
+        && data.keys().hasOnly([
+          "onlyChatMode",
+          "updatedAt",
+          "updatedBy"
+        ])
+        && data.onlyChatMode is bool
+        && (!("updatedAt" in data) || data.updatedAt is timestamp)
+        && (!("updatedBy" in data) || data.updatedBy == userId);
+    }
+
+    function validAffectedCallAvailability(fieldName, userId) {
+      return !affects(fieldName) ||
+        (
+          fieldName in request.resource.data &&
+          validCallAvailability(request.resource.data[fieldName], userId)
+        );
     }
 
     function validCreateUserDoc(userId) {
@@ -112,6 +184,7 @@ service cloud.firestore {
           "languages",
           "isListener",
           "isAvailable",
+          "isOnCall",
           "followersCount",
           "level",
           "listenerRate",
@@ -119,6 +192,7 @@ service cloud.firestore {
           "blocked",
           "fcmTokens",
           "favoriteListeners",
+          "callAvailability",
           "activeCallId",
           "ratingAvg",
           "ratingCount",
@@ -130,7 +204,7 @@ service cloud.firestore {
         && request.resource.data.email is string
         && request.resource.data.displayName is string
         && request.resource.data.credits is int
-        && request.resource.data.credits == 500
+        && request.resource.data.credits == 0
         && request.resource.data.reservedCredits is int
         && request.resource.data.reservedCredits == 0
         && request.resource.data.earningsCredits is int
@@ -147,6 +221,8 @@ service cloud.firestore {
         && request.resource.data.languages is list
         && request.resource.data.isListener is bool
         && request.resource.data.isAvailable is bool
+        && request.resource.data.isOnCall is bool
+        && request.resource.data.isOnCall == false
         && request.resource.data.followersCount is int
         && request.resource.data.followersCount == 0
         && request.resource.data.level is int
@@ -157,24 +233,28 @@ service cloud.firestore {
         && request.resource.data.blocked is list
         && request.resource.data.fcmTokens is list
         && request.resource.data.favoriteListeners is list
+        && validCallAvailability(request.resource.data.callAvailability, userId)
         && request.resource.data.activeCallId is string
+        && request.resource.data.activeCallId == ""
         && request.resource.data.ratingAvg is number
         && request.resource.data.ratingAvg == 0
         && request.resource.data.ratingCount is int
         && request.resource.data.ratingCount == 0
         && request.resource.data.ratingSum is int
         && request.resource.data.ratingSum == 0
-        && request.resource.data.topics.size() <= 20
-        && request.resource.data.languages.size() <= 20
-        && request.resource.data.following.size() <= 2000
-        && request.resource.data.blocked.size() <= 2000
-        && request.resource.data.fcmTokens.size() <= 20
-        && request.resource.data.favoriteListeners.size() <= 500;
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.lastSeen is timestamp
+        && listSizeAtMost("topics", 20)
+        && listSizeAtMost("languages", 20)
+        && listSizeAtMost("following", 2000)
+        && listSizeAtMost("blocked", 2000)
+        && listSizeAtMost("fcmTokens", 20)
+        && listSizeAtMost("favoriteListeners", 500);
     }
 
     function isAllowedSelfUserUpdate() {
-      return changedKeys().hasOnly([
-          "displayName",
+      return affectedKeys().hasOnly([
+        "displayName",
           "photoURL",
           "bio",
           "gender",
@@ -190,90 +270,41 @@ service cloud.firestore {
           "following",
           "blocked",
           "fcmTokens",
-          "favoriteListeners"
+          "favoriteListeners",
+          "callAvailability"
         ])
-        && validOptionalString("displayName")
-        && validOptionalString("photoURL")
-        && validOptionalString("bio")
-        && validOptionalString("gender")
-        && validOptionalString("city")
-        && validOptionalString("state")
-        && validOptionalString("country")
-        && validStringList("topics")
-        && validStringList("languages")
-        && validOptionalBool("isListener")
-        && validOptionalBool("isAvailable")
-        && (!("listenerRate" in request.resource.data) ||
-            validRate(request.resource.data.listenerRate))
-        && validStringList("following")
-        && validStringList("blocked")
-        && validStringList("fcmTokens")
-        && validStringList("favoriteListeners")
-        && request.resource.data.credits == resource.data.credits
-        && request.resource.data.reservedCredits == resource.data.reservedCredits
-        && request.resource.data.earningsCredits == resource.data.earningsCredits
-        && request.resource.data.platformRevenueCredits == resource.data.platformRevenueCredits
-        && request.resource.data.followersCount == resource.data.followersCount
-        && request.resource.data.level == resource.data.level
-        && request.resource.data.ratingAvg == resource.data.ratingAvg
-        && request.resource.data.ratingCount == resource.data.ratingCount
-        && request.resource.data.ratingSum == resource.data.ratingSum
-        && request.resource.data.topics.size() <= 20
-        && request.resource.data.languages.size() <= 20
-        && request.resource.data.following.size() <= 2000
-        && request.resource.data.blocked.size() <= 2000
-        && request.resource.data.fcmTokens.size() <= 20
-        && request.resource.data.favoriteListeners.size() <= 500;
-    }
-
-    function validPublicUserKeys(data) {
-      return data.keys().hasOnly([
-        "uid",
-        "displayName",
-        "photoURL",
-        "bio",
-        "topics",
-        "languages",
-        "isListener",
-        "isAvailable",
-        "adminBlocked",
-        "hiddenFromDiscovery",
-        "discoverable",
-        "followersCount",
-        "level",
-        "listenerRate",
-        "ratingAvg",
-        "ratingCount",
-        "ratingSum",
-        "createdAt",
-        "lastSeen",
-        "lastPublicUpdatedAt"
-      ]);
-    }
-
-    function validPublicUserShape(data, userId) {
-      return data.uid == userId
-        && validPublicUserKeys(data)
-        && data.displayName is string
-        && data.photoURL is string
-        && data.bio is string
-        && data.topics is list
-        && data.languages is list
-        && data.isListener is bool
-        && data.isAvailable is bool
-        && (!("adminBlocked" in data) || data.adminBlocked is bool)
-        && (!("hiddenFromDiscovery" in data) || data.hiddenFromDiscovery is bool)
-        && (!("discoverable" in data) || data.discoverable is bool)
-        && data.followersCount is int
-        && data.level is int
-        && data.listenerRate is int
-        && validRate(data.listenerRate)
-        && data.ratingAvg is number
-        && data.ratingCount is int
-        && data.ratingSum is number
-        && (!("createdAt" in data) || data.createdAt == null || data.createdAt is timestamp)
-        && (!("lastSeen" in data) || data.lastSeen == null || data.lastSeen is timestamp)
-        && (!("lastPublicUpdatedAt" in data) || data.lastPublicUpdatedAt is timestamp);
+        && validAffectedOptionalString("displayName")
+        && validAffectedOptionalString("photoURL")
+        && validAffectedOptionalString("bio")
+        && validAffectedOptionalString("gender")
+        && validAffectedOptionalString("city")
+        && validAffectedOptionalString("state")
+        && validAffectedOptionalString("country")
+        && validAffectedStringList("topics")
+        && validAffectedStringList("languages")
+        && validAffectedOptionalBool("isListener")
+        && validAffectedOptionalBool("isAvailable")
+        && validAffectedRate("listenerRate")
+        && validAffectedStringList("following")
+        && validAffectedStringList("blocked")
+        && validAffectedStringList("fcmTokens")
+        && validAffectedStringList("favoriteListeners")
+        && validAffectedCallAvailability("callAvailability", uid())
+        && protectedFieldUnchangedIfPresent("credits")
+        && protectedFieldUnchangedIfPresent("reservedCredits")
+        && protectedFieldUnchangedIfPresent("earningsCredits")
+        && protectedFieldUnchangedIfPresent("platformRevenueCredits")
+        && protectedFieldUnchangedIfPresent("followersCount")
+        && protectedFieldUnchangedIfPresent("level")
+        && protectedFieldUnchangedIfPresent("ratingAvg")
+        && protectedFieldUnchangedIfPresent("ratingCount")
+        && protectedFieldUnchangedIfPresent("ratingSum")
+        && listSizeAtMost("topics", 20)
+        && listSizeAtMost("languages", 20)
+        && listSizeAtMost("following", 2000)
+        && listSizeAtMost("blocked", 2000)
+        && listSizeAtMost("fcmTokens", 20)
+        && listSizeAtMost("favoriteListeners", 500);
     }
 
     function parentSession(sessionId) {
@@ -335,6 +366,16 @@ service cloud.firestore {
         && (!("metadata" in data) || data.metadata is map);
     }
 
+    function validClientTextMessageCreate(data) {
+      return data.type == "text"
+        && data.text.size() > 0
+        && data.text.size() <= 2000
+        && ("createdAt" in data)
+        && data.createdAt is timestamp
+        && ("createdAtMs" in data)
+        && data.createdAtMs is int
+        && data.createdAtMs > 0;
+    }
     function senderReceiverMatchParent(sessionId, data) {
       return parentSessionMatchesPath(sessionId) && (
         (
@@ -352,6 +393,7 @@ service cloud.firestore {
       return signedIn()
         && parentSessionMatchesPath(sessionId)
         && validMessageDocShape(request.resource.data)
+        && validClientTextMessageCreate(request.resource.data)
         && request.resource.data.senderId == uid()
         && request.resource.data.receiverId != uid()
         && senderReceiverMatchParent(sessionId, request.resource.data)
@@ -401,12 +443,38 @@ service cloud.firestore {
         );
     }
 
+    function isChatParticipantByParticipantIds() {
+      return signedIn()
+        && resource.data.participantIds is list
+        && uid() in resource.data.participantIds;
+    }
+
+    function canListOwnChatSessions() {
+      return signedIn()
+        && uid() in resource.data.participantIds;
+    }
+
+    function isPendingActorForChatSession() {
+      return signedIn()
+        && resource.data.pendingFor == uid()
+        && resource.data.callRequestOpen == true
+        && resource.data.participantIds is list
+        && uid() in resource.data.participantIds;
+    }
+
+    function canListOwnPendingChatRequests() {
+      return signedIn()
+        && uid() in resource.data.participantIds
+        && resource.data.pendingFor == uid()
+        && resource.data.callRequestOpen == true;
+    }
+
     function isChatParticipantByPath(sessionId) {
       return signedIn()
         && sessionId is string
         && (
           sessionId.matches('^' + uid() + '_.+$') ||
-          sessionId.matches('^.+_' + uid() + r'$')
+          sessionId.matches('^.+_' + uid() + '$')
         );
     }
 
@@ -426,12 +494,18 @@ service cloud.firestore {
         && request.resource.data.callId is string
         && callExists(request.resource.data.callId)
         && isParticipant(request.resource.data.callId)
+        && isOtherCallParticipant(
+          request.resource.data.callId,
+          request.resource.data.reviewedUserId
+        )
         && callDoc(request.resource.data.callId).data.status == "ended"
         && reviewId == request.resource.data.callId + "_" + uid()
         && request.resource.data.stars is int
         && request.resource.data.stars >= 1
         && request.resource.data.stars <= 5
-        && request.resource.data.comment is string;
+        && request.resource.data.comment is string
+        && request.resource.data.comment.size() <= 1000
+        && request.resource.data.createdAt is timestamp;
     }
 
     function validReportCreate() {
@@ -449,15 +523,26 @@ service cloud.firestore {
         && request.resource.data.callId is string
         && callExists(request.resource.data.callId)
         && isParticipant(request.resource.data.callId)
+        && isOtherCallParticipant(
+          request.resource.data.callId,
+          request.resource.data.reportedUserId
+        )
         && request.resource.data.reason is string
-        && request.resource.data.reason.size() > 0;
+        && request.resource.data.reason.size() > 0
+        && request.resource.data.reason.size() <= 1000
+        && request.resource.data.createdAt is timestamp;
     }
 
     function isReportOwnerByResource() {
       return signedIn()
+        && resource.data.reporterId == uid();
+    }
+
+    function isReviewOwnerByResource() {
+      return signedIn()
         && (
-          resource.data.reporterId == uid() ||
-          resource.data.reportedUserId == uid()
+          resource.data.reviewerId == uid() ||
+          resource.data.reviewedUserId == uid()
         );
     }
 
@@ -466,12 +551,51 @@ service cloud.firestore {
       allow create: if isMe(userId) && validCreateUserDoc(userId);
       allow update: if isMe(userId) && isAllowedSelfUserUpdate();
       allow delete: if false;
+
+      match /saved_posts/{postId} {
+        allow read: if isMe(userId);
+        allow create, update, delete: if false;
+      }
+
+      match /notifications/{notificationId} {
+        allow read: if isMe(userId);
+        allow create, update, delete: if false;
+      }
     }
 
     match /public_users/{userId} {
       allow read: if true;
       allow create, update: if false;
       allow delete: if false;
+
+      // Anonymized review mirror (stars + comment + date, no reviewer identity).
+      // Written server-side by aggregateReviewToUser_v2.
+      match /reviews/{reviewId} {
+        allow read: if true;
+        allow create, update, delete: if false;
+      }
+    }
+
+    match /social_posts/{postId} {
+      allow read: if true;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+
+      match /likes/{likeUserId} {
+        allow read: if true;
+        allow create, update, delete: if false;
+      }
+
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create, update, delete: if false;
+      }
+
+      match /shares/{shareId} {
+        allow read: if signedIn();
+        allow create, update, delete: if false;
+      }
     }
 
     match /calls/{callId} {
@@ -481,8 +605,13 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /calls/{callId}/participantTokens/{userId} {
+      allow read: if signedIn() && uid() == userId && isParticipant(callId);
+      allow create, update, delete: if false;
+    }
+
     match /reviews/{reviewId} {
-      allow read: if signedIn();
+      allow read: if isAdmin() || isReviewOwnerByResource();
       allow create: if validReviewCreate(reviewId);
       allow update, delete: if isAdmin();
     }
@@ -532,7 +661,8 @@ service cloud.firestore {
     }
 
     match /chat_sessions/{sessionId} {
-      allow read: if isAdmin() || isChatParticipantByResource() || isChatParticipantByPath(sessionId);
+      allow get: if isAdmin() || isChatParticipantByParticipantIds() || isPendingActorForChatSession() || isChatParticipantByResource() || isChatParticipantByPath(sessionId);
+      allow list: if isAdmin() || canListOwnChatSessions() || canListOwnPendingChatRequests();
       allow create: if isAdmin();
       allow update: if isAdmin();
       allow delete: if false;

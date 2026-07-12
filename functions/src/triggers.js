@@ -883,6 +883,23 @@ exports.aggregateReviewToUser_v2 = functions
       });
     });
 
+    // Mirror an anonymized copy to the listener's public profile so anyone can
+    // read reviews without exposing who left them (no reviewerId / callId).
+    await admin.firestore()
+      .collection("public_users")
+      .doc(userId)
+      .collection("reviews")
+      .doc(snap.id)
+      .set(
+        {
+          stars,
+          comment: strOr(data.comment).trim().slice(0, 1000),
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAtMs: Date.now(),
+        },
+        { merge: true }
+      );
+
     return null;
   });
 
