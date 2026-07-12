@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/theme/app_palette.dart';
+import '../../repositories/call_repository.dart';
 import '../../repositories/user_repository.dart';
 import '../../shared/models/app_user_model.dart';
 import '../call_history_screen.dart';
+import '../chat_conversation_screen.dart';
 import '../help_support_screen.dart';
 import '../listener_profile_screen.dart';
 import '../profile_screen.dart';
@@ -25,11 +27,7 @@ class _RedesignShellState extends State<RedesignShell> {
 
   static const List<Widget> _pages = <Widget>[
     _DiscoverPage(),
-    _PlaceholderPage(
-      icon: Icons.chat_bubble_outline_rounded,
-      title: 'Chats',
-      subtitle: 'Talk first, then request a call.',
-    ),
+    _ChatsPage(),
     _PlaceholderPage(
       icon: Icons.phone_rounded,
       title: 'Call',
@@ -637,6 +635,225 @@ class _MePageState extends State<_MePage> {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Chats (conversations + call requests)
+// ---------------------------------------------------------------------------
+
+class _ChatsPage extends StatefulWidget {
+  const _ChatsPage();
+
+  @override
+  State<_ChatsPage> createState() => _ChatsPageState();
+}
+
+class _ChatsPageState extends State<_ChatsPage> {
+  final Stream<List<Map<String, dynamic>>> _sessions =
+      CallRepository.instance.watchCurrentUserChatSessions();
+  final String _myUid = UserRepository.instance.myUidOrNull ?? '';
+  final Map<String, AppUserModel?> _cache = <String, AppUserModel?>{};
+
+  Future<AppUserModel?> _resolve(String uid) async {
+    if (_cache.containsKey(uid)) return _cache[uid];
+    final user = await UserRepository.instance.getUser(uid);
+    _cache[uid] = user;
+    return user;
+  }
+
+  String _str(dynamic v) => v is String ? v : '';
+  int _int(dynamic v) => v is num ? v.toInt() : 0;
+
+  void _openChat(Map<String, dynamic> s, AppUserModel? other) {
+    final speakerId = _str(s['speakerId']);
+    final listenerId = _str(s['listenerId']);
+    if (speakerId.isEmpty || listenerId.isEmpty) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChatConversationScreen(
+          speakerId: speakerId,
+          listenerId: listenerId,
+          actualListenerId: _str(s['actualListenerId']),
+          iAmListener: _myUid == listenerId,
+          initialOtherUser: other,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      bottom: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            color: AppPalette.card,
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            child: const Text(
+              'Chats',
+              style: TextStyle(
+                fontSize: 19,
+                fontWeight: FontWeight.w700,
+                color: AppPalette.textPrimary,
+              ),
+            ),
+          ),
+          Expanded(
+            child: StreamBuilder<List<Map<String, dynamic>>>(
+              stream: _sessions,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    !snapshot.hasData) {
+                  return const Center(
+                    child: SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        color: AppPalette.blue,
+                        strokeWidth: 2.5,
+                      ),
+                    ),
+                  );
+                }
+                final sessions = (snapshot.data ??
+                        const <Map<String, dynamic>>[])
+                    .where((s) =>
+                        _str(s['speakerId']).isNotEmpty &&
+                        _str(s['listenerId']).isNotEmpty)
+                    .toList();
+                if (sessions.isEmpty) {
+                  return const _DiscoverMessage(
+                    "No chats yet 🌙\n"
+                    "Start one from a listener's profile.",
+                  );
+                }
+                return ListView.builder(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  itemCount: sessions.length,
+                  itemBuilder: (context, i) => _chatRow(sessions[i]),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _chatRow(Map<String, dynamic> s) {
+    final speakerId = _str(s['speakerId']);
+    final listenerId = _str(s['listenerId']);
+    final otherUid = speakerId == _myUid ? listenerId : speakerId;
+    final lastMessage = _str(s['lastMessageText']);
+    final iAmSpeaker = speakerId == _myUid;
+    final unread = iAmSpeaker
+        ? _int(s['speakerUnreadCount'])
+        : _int(s['listenerUnreadCount']);
+    final wantsCall =
+        s['callRequestOpen'] == true && _str(s['pendingFor']) == _myUid;
+
+    return FutureBuilder<AppUserModel?>(
+      future: _resolve(otherUid),
+      initialData: _cache[otherUid],
+      builder: (context, snap) {
+        final other = snap.data;
+        final name = other?.safeDisplayName ?? 'Someone';
+        return InkWell(
+          onTap: () => _openChat(s, other),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: AppPalette.divider, width: 0.5),
+              ),
+            ),
+            child: Row(
+              children: [
+                _Avatar(
+                  initials: _initialsFromName(name),
+                  photoUrl: other?.photoURL,
+                  size: 46,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: AppPalette.textPrimary,
+                              ),
+                            ),
+                          ),
+                          if (wantsCall)
+                            Container(
+                              margin: const EdgeInsets.only(left: 6),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: AppPalette.blueTint,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: const Text(
+                                'wants to call',
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppPalette.blue,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        lastMessage.isEmpty ? 'Say hi 👋' : lastMessage,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: AppPalette.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (unread > 0)
+                  Container(
+                    margin: const EdgeInsets.only(left: 8),
+                    width: 20,
+                    height: 20,
+                    alignment: Alignment.center,
+                    decoration: const BoxDecoration(
+                      color: AppPalette.blue,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      '$unread',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
