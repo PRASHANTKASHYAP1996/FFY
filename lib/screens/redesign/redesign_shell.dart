@@ -4,7 +4,11 @@ import 'package:flutter/services.dart';
 import '../../core/theme/app_palette.dart';
 import '../../repositories/user_repository.dart';
 import '../../shared/models/app_user_model.dart';
+import '../call_history_screen.dart';
+import '../help_support_screen.dart';
 import '../listener_profile_screen.dart';
+import '../profile_screen.dart';
+import '../wallet_details_screen.dart';
 
 /// Phase 1 of the redesign: the new 5-tab shell + light-blue theme.
 /// Discover is built out to match the agreed direction; the other tabs are
@@ -36,11 +40,7 @@ class _RedesignShellState extends State<RedesignShell> {
       title: 'Feed',
       subtitle: 'Posts from people you follow.',
     ),
-    _PlaceholderPage(
-      icon: Icons.person_outline_rounded,
-      title: 'Me',
-      subtitle: 'Your profile, wallet, and earnings.',
-    ),
+    _MePage(),
   ];
 
   @override
@@ -430,6 +430,211 @@ class _DiscoverMessage extends StatelessWidget {
             height: 1.5,
             color: AppPalette.textSecondary,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Me (own profile + wallet + settings hub)
+// ---------------------------------------------------------------------------
+
+class _MePage extends StatefulWidget {
+  const _MePage();
+
+  @override
+  State<_MePage> createState() => _MePageState();
+}
+
+class _MePageState extends State<_MePage> {
+  final Stream<AppUserModel?> _me = UserRepository.instance.watchMe();
+
+  void _open(Widget screen) {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+  }
+
+  Future<void> _logout() async {
+    await UserRepository.instance.signOut();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      bottom: false,
+      child: StreamBuilder<AppUserModel?>(
+        stream: _me,
+        builder: (context, snapshot) {
+          final me = snapshot.data;
+          final name = me?.safeDisplayName ?? '...';
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+            children: [
+              Row(
+                children: [
+                  _Avatar(
+                    initials: _initialsFromName(name),
+                    photoUrl: me?.photoURL,
+                    size: 56,
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: AppPalette.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          me?.isListener == true
+                              ? 'Listener mode: on'
+                              : 'Member',
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            color: AppPalette.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: _moneyCard(
+                      label: 'Wallet',
+                      value: '₹${me?.credits ?? 0}',
+                      action: 'Add money',
+                      onTap: () => _open(const WalletDetailsScreen()),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _moneyCard(
+                      label: 'Earnings',
+                      value: '₹${me?.earningsCredits ?? 0}',
+                      action: 'Withdraw',
+                      onTap: () => _open(const WalletDetailsScreen()),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              _menuRow(Icons.person_outline_rounded, 'Edit profile',
+                  () => _open(const ProfileScreen())),
+              _menuRow(Icons.account_balance_wallet_outlined,
+                  'Wallet and transactions',
+                  () => _open(const WalletDetailsScreen())),
+              _menuRow(Icons.access_time_rounded, 'Call history',
+                  () => _open(const CallHistoryScreen())),
+              _menuRow(Icons.help_outline_rounded, 'Help and support',
+                  () => _open(const HelpSupportScreen())),
+              _menuRow(Icons.logout_rounded, 'Log out', _logout, danger: true),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _moneyCard({
+    required String label,
+    required String value,
+    required String action,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: AppPalette.cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12.5,
+              color: AppPalette.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: AppPalette.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 10),
+          GestureDetector(
+            onTap: onTap,
+            child: Container(
+              width: double.infinity,
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              decoration: BoxDecoration(
+                color: AppPalette.blue,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                action,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _menuRow(IconData icon, String label, VoidCallback onTap,
+      {bool danger = false}) {
+    const dangerColor = Color(0xFFDC2626);
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 2),
+        decoration: const BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: AppPalette.divider, width: 0.5),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(icon,
+                size: 20,
+                color: danger ? dangerColor : AppPalette.textSecondary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: danger ? dangerColor : AppPalette.textPrimary,
+                ),
+              ),
+            ),
+            if (!danger)
+              const Icon(Icons.chevron_right_rounded,
+                  size: 18, color: AppPalette.textMuted),
+          ],
         ),
       ),
     );
