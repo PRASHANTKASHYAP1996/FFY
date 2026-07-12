@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/theme/app_palette.dart';
 
@@ -41,12 +42,19 @@ class _RedesignShellState extends State<RedesignShell> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppPalette.pageBg,
-      body: IndexedStack(index: _index, children: _pages),
-      bottomNavigationBar: _BottomNav(
-        index: _index,
-        onTap: (i) => setState(() => _index = i),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark, // Android: dark icons
+        statusBarBrightness: Brightness.light, // iOS: dark icons
+      ),
+      child: Scaffold(
+        backgroundColor: AppPalette.pageBg,
+        body: IndexedStack(index: _index, children: _pages),
+        bottomNavigationBar: _BottomNav(
+          index: _index,
+          onTap: (i) => setState(() => _index = i),
+        ),
       ),
     );
   }
@@ -92,12 +100,12 @@ class _BottomNav extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 22, color: color),
+            Icon(icon, size: 23, color: color),
             const SizedBox(height: 2),
             Text(
               label,
               style: TextStyle(
-                fontSize: 10.5,
+                fontSize: 11,
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                 color: color,
               ),
@@ -181,7 +189,7 @@ class _DiscoverPage extends StatelessWidget {
                       Text(
                         '14 here for you now',
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 13,
                           color: AppPalette.textSecondary,
                         ),
                       ),
@@ -192,9 +200,9 @@ class _DiscoverPage extends StatelessWidget {
                     crossAxisCount: 2,
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    mainAxisSpacing: 10,
-                    crossAxisSpacing: 10,
-                    childAspectRatio: 1.28,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    childAspectRatio: 0.92,
                     children:
                         _demo.map((l) => _ListenerCard(listener: l)).toList(),
                   ),
@@ -223,16 +231,16 @@ class _DiscoverPage extends StatelessWidget {
                   Text(
                     'How are you feeling?',
                     style: TextStyle(
-                      fontSize: 17,
+                      fontSize: 19,
                       fontWeight: FontWeight.w700,
                       color: AppPalette.textPrimary,
                     ),
                   ),
-                  SizedBox(height: 2),
+                  SizedBox(height: 3),
                   Text(
                     "someone's here for you 🌙",
                     style:
-                        TextStyle(fontSize: 12, color: AppPalette.textSecondary),
+                        TextStyle(fontSize: 13, color: AppPalette.textSecondary),
                   ),
                 ],
               ),
@@ -247,7 +255,7 @@ class _DiscoverPage extends StatelessWidget {
               final selected = i == 0;
               return Container(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
                 decoration: BoxDecoration(
                   color: selected ? AppPalette.blue : AppPalette.blueTint,
                   borderRadius: BorderRadius.circular(999),
@@ -255,7 +263,7 @@ class _DiscoverPage extends StatelessWidget {
                 child: Text(
                   _moods[i],
                   style: TextStyle(
-                    fontSize: 11.5,
+                    fontSize: 13,
                     fontWeight: FontWeight.w500,
                     color: selected ? Colors.white : AppPalette.blue,
                   ),
@@ -276,23 +284,23 @@ class _ListenerCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(11),
+      padding: const EdgeInsets.all(12),
       decoration: AppPalette.cardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              _Avatar(initials: listener.initials, size: 36),
+              _Avatar(initials: listener.initials, size: 40),
               const Spacer(),
               const _OnlineDot(),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Text(
             listener.name,
             style: const TextStyle(
-              fontSize: 13,
+              fontSize: 15,
               fontWeight: FontWeight.w600,
               color: AppPalette.textPrimary,
             ),
@@ -300,12 +308,12 @@ class _ListenerCard extends StatelessWidget {
           const SizedBox(height: 2),
           Row(
             children: [
-              const Icon(Icons.star_rounded, size: 13, color: AppPalette.star),
+              const Icon(Icons.star_rounded, size: 14, color: AppPalette.star),
               const SizedBox(width: 3),
               Text(
                 '${listener.rating} · ₹${listener.rate}/min',
                 style: const TextStyle(
-                    fontSize: 11, color: AppPalette.textSecondary),
+                    fontSize: 12, color: AppPalette.textSecondary),
               ),
             ],
           ),
@@ -316,7 +324,7 @@ class _ListenerCard extends StatelessWidget {
               onPressed: () {},
               style: FilledButton.styleFrom(
                 backgroundColor: AppPalette.blue,
-                padding: const EdgeInsets.symmetric(vertical: 8),
+                padding: const EdgeInsets.symmetric(vertical: 9),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
@@ -324,7 +332,7 @@ class _ListenerCard extends StatelessWidget {
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
               child: const Text('Talk',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
             ),
           ),
         ],
