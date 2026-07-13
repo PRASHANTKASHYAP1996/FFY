@@ -47,6 +47,14 @@ function requireCreatePostDraft(data, uid) {
   const isStory = data && data.isStory === true;
   const expectedImagePath = `social_uploads/${uid}/${postId}.jpg`;
 
+  // Stories were dropped from the product (feed/profile posts only).
+  if (isStory) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "stories_disabled"
+    );
+  }
+
   if (!imageURL || !/^https?:\/\//.test(imageURL)) {
     throw new functions.https.HttpsError("invalid-argument", "invalid_image");
   }
