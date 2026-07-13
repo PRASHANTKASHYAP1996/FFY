@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../core/theme/app_palette.dart';
 import '../repositories/analytics_repository.dart';
 import '../shared/models/listener_leaderboard_item.dart';
+import '../shared/wallet_amount_formatter.dart';
 
 class ListenerLeaderboardScreen extends StatefulWidget {
   const ListenerLeaderboardScreen({super.key});
@@ -45,7 +48,7 @@ class _ListenerLeaderboardScreenState extends State<ListenerLeaderboardScreen> {
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w900,
-                  color: Color(0xFF111827),
+                  color: AppPalette.textPrimary,
                 ),
               ),
               if (subtitle != null && subtitle.trim().isNotEmpty) ...[
@@ -53,7 +56,7 @@ class _ListenerLeaderboardScreenState extends State<ListenerLeaderboardScreen> {
                 Text(
                   subtitle,
                   style: const TextStyle(
-                    color: Color(0xFF6B7280),
+                    color: AppPalette.textSecondary,
                     fontWeight: FontWeight.w600,
                     height: 1.35,
                   ),
@@ -70,9 +73,13 @@ class _ListenerLeaderboardScreenState extends State<ListenerLeaderboardScreen> {
   Widget _rankChip(int rank) {
     final isTop3 = rank <= 3;
 
-    final bg = isTop3 ? const Color(0xFFFFF7DB) : const Color(0xFFF3F4F8);
-    final border = isTop3 ? const Color(0xFFFDE68A) : const Color(0xFFE5E7EB);
-    final fg = isTop3 ? const Color(0xFFB45309) : const Color(0xFF374151);
+    final bg = isTop3
+        ? const Color(0xFFF59E0B).withValues(alpha: 0.14)
+        : AppPalette.feedBg;
+    final border = isTop3
+        ? const Color(0xFFF59E0B).withValues(alpha: 0.28)
+        : AppPalette.border;
+    final fg = isTop3 ? const Color(0xFFB45309) : AppPalette.textSecondary;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
@@ -92,8 +99,8 @@ class _ListenerLeaderboardScreenState extends State<ListenerLeaderboardScreen> {
   }
 
   Widget _availabilityChip(bool available) {
-    final color = available ? const Color(0xFF15803D) : const Color(0xFFDC2626);
-    final text = available ? 'Available' : 'Busy / Offline';
+    final color = available ? AppPalette.online : const Color(0xFFDC2626);
+    final text = available ? 'Available' : 'Unavailable';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -116,25 +123,29 @@ class _ListenerLeaderboardScreenState extends State<ListenerLeaderboardScreen> {
   Widget _softChip({
     required IconData icon,
     required String text,
-    Color bg = const Color(0xFFF3F4F8),
-    Color fg = const Color(0xFF374151),
+    Color? bg,
+    Color? fg,
   }) {
+    final chipBg = bg ?? AppPalette.feedBg;
+    final chipFg = fg ?? AppPalette.textSecondary;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: bg,
+        color: chipBg,
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: chipFg.withValues(alpha: 0.22)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: fg),
+          Icon(icon, size: 14, color: chipFg),
           const SizedBox(width: 6),
           Text(
             text,
             style: TextStyle(
               fontWeight: FontWeight.w800,
-              color: fg,
+              color: chipFg,
             ),
           ),
         ],
@@ -169,7 +180,7 @@ class _ListenerLeaderboardScreenState extends State<ListenerLeaderboardScreen> {
           Text(
             label,
             style: const TextStyle(
-              color: Color(0xFF374151),
+              color: AppPalette.textSecondary,
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -190,7 +201,7 @@ class _ListenerLeaderboardScreenState extends State<ListenerLeaderboardScreen> {
             child: Text(
               label,
               style: const TextStyle(
-                color: Color(0xFF6B7280),
+                color: AppPalette.textSecondary,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -198,7 +209,7 @@ class _ListenerLeaderboardScreenState extends State<ListenerLeaderboardScreen> {
           Text(
             value,
             style: const TextStyle(
-              color: Color(0xFF111827),
+              color: AppPalette.textPrimary,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -213,119 +224,111 @@ class _ListenerLeaderboardScreenState extends State<ListenerLeaderboardScreen> {
     required String metricTitle,
     required String metricValue,
   }) {
-    final safeName =
-        item.displayName.trim().isNotEmpty ? item.displayName.trim() : 'Listener';
+    final safeName = item.displayName.trim().isNotEmpty
+        ? item.displayName.trim()
+        : 'Listener';
 
     final firstLetter = safeName[0].toUpperCase();
 
-    final avatarBg =
-        rank <= 3 ? const Color(0xFFFFF7DB) : const Color(0xFFE6E8FF);
+    final avatarBg = rank <= 3
+        ? const Color(0xFFF59E0B).withValues(alpha: 0.16)
+        : AppPalette.blueTint;
 
-    final avatarFg =
-        rank <= 3 ? const Color(0xFFB45309) : const Color(0xFF4A4FB3);
+    final avatarFg = rank <= 3 ? const Color(0xFFB45309) : AppPalette.blue;
 
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(26),
-      child: Ink(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(26),
-          border: Border.all(
-            color: Colors.black.withValues(alpha: 0.05),
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
+    return Container(
+      decoration: AppPalette.cardDecoration(radius: 18),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _rankChip(rank),
-                  const SizedBox(width: 12),
-                  CircleAvatar(
-                    radius: 25,
-                    backgroundColor: avatarBg,
-                    child: Text(
-                      firstLetter,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w900,
-                        color: avatarFg,
-                      ),
-                    ),
+              _rankChip(rank),
+              const SizedBox(width: 12),
+              CircleAvatar(
+                radius: 25,
+                backgroundColor: avatarBg,
+                child: Text(
+                  firstLetter,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: avatarFg,
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          safeName,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w900,
-                            fontSize: 17,
-                            color: Color(0xFF111827),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            _availabilityChip(item.isAvailable),
-                            _softChip(
-                              icon: Icons.people_alt_rounded,
-                              text: '${item.followersCount} followers',
-                            ),
-                            _softChip(
-                              icon: Icons.star_rounded,
-                              text: item.ratingCount > 0
-                                  ? '${item.ratingAvg.toStringAsFixed(1)} (${item.ratingCount})'
-                                  : 'No ratings',
-                              bg: const Color(0xFFFFFBEB),
-                              fg: const Color(0xFFD97706),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
                 ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '$metricTitle: $metricValue',
+                      safeName,
                       style: const TextStyle(
                         fontWeight: FontWeight.w900,
-                        color: Color(0xFF111827),
+                        fontSize: 17,
+                        color: AppPalette.textPrimary,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    _statLine(
-                      label: 'Paid calls',
-                      value: '${item.paidCalls}',
-                    ),
-                    _statLine(
-                      label: 'Total earned',
-                      value: '₹${item.totalEarned}',
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _availabilityChip(item.isAvailable),
+                        _softChip(
+                          icon: Icons.people_alt_rounded,
+                          text: '${item.followersCount} followers',
+                        ),
+                        _softChip(
+                          icon: Icons.star_rounded,
+                          text: item.ratingCount > 0
+                              ? '${item.ratingAvg.toStringAsFixed(1)} (${item.ratingCount})'
+                              : 'Not rated yet',
+                          bg: const Color(0xFFF59E0B).withValues(alpha: 0.14),
+                          fg: const Color(0xFFB45309),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppPalette.feedBg,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: AppPalette.border,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$metricTitle: $metricValue',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    color: AppPalette.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _statLine(
+                  label: 'Paid calls',
+                  value: '${item.paidCalls}',
+                ),
+                _statLine(
+                  label: 'Total earned',
+                  value: formatWalletAmount(item.totalEarned),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -346,26 +349,26 @@ class _ListenerLeaderboardScreenState extends State<ListenerLeaderboardScreen> {
         ),
         const SizedBox(height: 10),
         if (items.isEmpty)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                children: const [
-                  Icon(
-                    Icons.bar_chart_rounded,
-                    size: 42,
-                    color: Color(0xFF9CA3AF),
+          Container(
+            width: double.infinity,
+            decoration: AppPalette.cardDecoration(radius: 18),
+            padding: const EdgeInsets.all(18),
+            child: const Column(
+              children: [
+                Icon(
+                  Icons.bar_chart_rounded,
+                  size: 42,
+                  color: AppPalette.blue,
+                ),
+                SizedBox(height: 10),
+                Text(
+                  'No data available yet.',
+                  style: TextStyle(
+                    color: AppPalette.textSecondary,
+                    fontWeight: FontWeight.w700,
                   ),
-                  SizedBox(height: 10),
-                  Text(
-                    'No data available yet.',
-                    style: TextStyle(
-                      color: Color(0xFF6B7280),
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           )
         else
@@ -389,131 +392,150 @@ class _ListenerLeaderboardScreenState extends State<ListenerLeaderboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Listener Leaderboard'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: _reload,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-        ],
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+        statusBarBrightness: Brightness.light,
       ),
-      body: FutureBuilder<List<ListenerLeaderboardItem>>(
-        future: _future,
-        builder: (_, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      child: Scaffold(
+        backgroundColor: AppPalette.pageBg,
+        appBar: AppBar(
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          backgroundColor: Colors.transparent,
+          foregroundColor: AppPalette.textPrimary,
+          surfaceTintColor: Colors.transparent,
+          title: const Text('Listener Leaderboard'),
+          actions: [
+            IconButton(
+              tooltip: 'Refresh',
+              onPressed: _reload,
+              icon: const Icon(Icons.refresh_rounded),
+            ),
+          ],
+        ),
+        body: DecoratedBox(
+          decoration: const BoxDecoration(color: AppPalette.pageBg),
+          child: FutureBuilder<List<ListenerLeaderboardItem>>(
+            future: _future,
+            builder: (_, snap) {
+              if (snap.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
 
-          if (snap.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'Could not load leaderboard.\n\n${snap.error}',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            );
-          }
-
-          final allItems = snap.data ?? const <ListenerLeaderboardItem>[];
-
-          final topEarners = _repository.topEarners(allItems);
-          final topRated = _repository.topRated(allItems);
-          final mostFollowed = _repository.mostFollowed(allItems);
-
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
-            children: [
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Listener Leaderboard',
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                          color: Color(0xFF111827),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      const Text(
-                        'A cleaner internal ranking view for top-performing listeners. Recent calling and notification upgrades are still to be verified, so treat this as operational ranking, not final audited reporting.',
-                        style: TextStyle(
-                          color: Color(0xFF6B7280),
-                          fontWeight: FontWeight.w600,
-                          height: 1.35,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      GridView.count(
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 10,
-                        mainAxisSpacing: 10,
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        childAspectRatio: 1.45,
-                        children: [
-                          _metricTile(
-                            label: 'Leaderboard users',
-                            value: '${allItems.length}',
-                            color: const Color(0xFF4F46E5),
-                          ),
-                          _metricTile(
-                            label: 'Top earners shown',
-                            value: '${topEarners.length}',
-                            color: const Color(0xFF15803D),
-                          ),
-                          _metricTile(
-                            label: 'Top rated shown',
-                            value: '${topRated.length}',
-                            color: const Color(0xFFF59E0B),
-                          ),
-                          _metricTile(
-                            label: 'Most followed shown',
-                            value: '${mostFollowed.length}',
-                            color: const Color(0xFF7C3AED),
-                          ),
-                        ],
-                      ),
-                    ],
+              if (snap.hasError) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'Could not load leaderboard. Please try again.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppPalette.textSecondary),
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              _leaderboardSection(
-                title: 'Top Earners',
-                subtitle: 'Listeners generating the highest total earnings.',
-                items: topEarners,
-                metricTitle: 'Total earned',
-                metricValueBuilder: (item) => '₹${item.totalEarned}',
-              ),
-              const SizedBox(height: 18),
-              _leaderboardSection(
-                title: 'Top Rated',
-                subtitle: 'Listeners with the strongest rating performance.',
-                items: topRated,
-                metricTitle: 'Rating',
-                metricValueBuilder: (item) =>
-                    '${item.ratingAvg.toStringAsFixed(1)}★',
-              ),
-              const SizedBox(height: 18),
-              _leaderboardSection(
-                title: 'Most Followed',
-                subtitle: 'Listeners attracting the largest audience.',
-                items: mostFollowed,
-                metricTitle: 'Followers',
-                metricValueBuilder: (item) => '${item.followersCount}',
-              ),
-            ],
-          );
-        },
+                );
+              }
+
+              final allItems = snap.data ?? const <ListenerLeaderboardItem>[];
+
+              final topEarners = _repository.topEarners(allItems);
+              final topRated = _repository.topRated(allItems);
+              final mostFollowed = _repository.mostFollowed(allItems);
+
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
+                children: [
+                  Container(
+                    decoration: AppPalette.cardDecoration(radius: 18),
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Listener Leaderboard',
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                            color: AppPalette.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'See top listeners by earnings, ratings, and followers.',
+                          style: TextStyle(
+                            color: AppPalette.textSecondary,
+                            fontWeight: FontWeight.w600,
+                            height: 1.35,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        GridView.count(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          childAspectRatio: 1.45,
+                          children: [
+                            _metricTile(
+                              label: 'Leaderboard users',
+                              value: '${allItems.length}',
+                              color: AppPalette.blue,
+                            ),
+                            _metricTile(
+                              label: 'Top earners shown',
+                              value: '${topEarners.length}',
+                              color: AppPalette.online,
+                            ),
+                            _metricTile(
+                              label: 'Top rated shown',
+                              value: '${topRated.length}',
+                              color: const Color(0xFFB45309),
+                            ),
+                            _metricTile(
+                              label: 'Most followed shown',
+                              value: '${mostFollowed.length}',
+                              color: AppPalette.blueDark,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _leaderboardSection(
+                    title: 'Top Earners',
+                    subtitle:
+                        'Listeners generating the highest total earnings.',
+                    items: topEarners,
+                    metricTitle: 'Total earned',
+                    metricValueBuilder: (item) =>
+                        formatWalletAmount(item.totalEarned),
+                  ),
+                  const SizedBox(height: 18),
+                  _leaderboardSection(
+                    title: 'Top Rated',
+                    subtitle:
+                        'Listeners with the strongest rating performance.',
+                    items: topRated,
+                    metricTitle: 'Rating',
+                    metricValueBuilder: (item) =>
+                        '${item.ratingAvg.toStringAsFixed(1)}★',
+                  ),
+                  const SizedBox(height: 18),
+                  _leaderboardSection(
+                    title: 'Most Followed',
+                    subtitle: 'Listeners attracting the largest audience.',
+                    items: mostFollowed,
+                    metricTitle: 'Followers',
+                    metricValueBuilder: (item) => '${item.followersCount}',
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
       ),
     );
   }

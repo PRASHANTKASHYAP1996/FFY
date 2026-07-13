@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../core/theme/app_palette.dart';
 import '../repositories/analytics_repository.dart';
 import '../shared/models/analytics_summary_model.dart';
 import '../shared/models/analytics_timeseries_model.dart';
@@ -29,6 +31,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
   Map<String, dynamic>? _retentionMeta;
   Map<String, dynamic>? _timeseriesMeta;
   Map<String, dynamic>? _leaderboardMeta;
+  bool _refreshingServerCaches = false;
 
   @override
   void initState() {
@@ -140,6 +143,42 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
       _timeseriesFuture.then((_) {}),
       _leaderboardFuture.then((_) {}),
     ]);
+  }
+
+  Future<void> _refreshServerCaches() async {
+    if (_refreshingServerCaches) return;
+
+    setState(() {
+      _refreshingServerCaches = true;
+    });
+
+    try {
+      await _repository.refreshCaches();
+      await _reload();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Analytics server caches refreshed.')),
+      );
+    } catch (error) {
+      debugPrint(
+        'analytics.cache_refresh_failed ${error.runtimeType}',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content:
+              Text('Could not refresh analytics caches. Please try again.'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _refreshingServerCaches = false;
+        });
+      } else {
+        _refreshingServerCaches = false;
+      }
+    }
   }
 
   bool _looksLikePermissionError(Object error) {
@@ -348,7 +387,8 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
     if (!summarySampled &&
         (_isAuthoritativeMoney(_summaryMeta) ||
             _isAuthoritativeAnsweredMissed(_summaryMeta))) {
-      points.add('Summary totals are being served from a stronger backend coverage mode.');
+      points.add(
+          'Summary totals are being served from a stronger backend coverage mode.');
     }
 
     if (retentionSampled) {
@@ -368,13 +408,16 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
     }
 
     if (timeseriesSampled) {
-      points.add('Last 7 day trends are not full-window authoritative in this backend response.');
+      points.add(
+          'Last 7 day trends are not full-window authoritative in this backend response.');
     } else if (_coverageMode(_timeseriesMeta) == 'full_window') {
-      points.add('Last 7 day trend cards are calculated from explicit date-window queries.');
+      points.add(
+          'Last 7 day trend cards are calculated from explicit date-window queries.');
     }
 
     if (points.isEmpty) {
-      points.add('This dashboard is backend-fed and intended to improve admin truthfulness over direct client-side collection reads.');
+      points.add(
+          'This dashboard is backend-fed and intended to improve admin truthfulness over direct client-side collection reads.');
     }
 
     return Card(
@@ -394,9 +437,10 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
             const SizedBox(height: 8),
             ...List.generate(points.length, (index) {
               return Padding(
-                padding: EdgeInsets.only(bottom: index == points.length - 1 ? 0 : 8),
+                padding:
+                    EdgeInsets.only(bottom: index == points.length - 1 ? 0 : 8),
                 child: Text(
-                  '• ${points[index]}',
+                  '- ${points[index]}',
                   style: const TextStyle(
                     color: Color(0xFF6B7280),
                     fontWeight: FontWeight.w700,
@@ -615,7 +659,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
           SizedBox(
             width: 56,
             child: Text(
-              '₹$value',
+              'Rs $value',
               textAlign: TextAlign.right,
               style: const TextStyle(
                 fontWeight: FontWeight.w900,
@@ -841,17 +885,17 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
             ),
             _metricCard(
               title: 'Charged today',
-              value: '₹${d.totalSpeakerCharge}',
+              value: 'Rs ${d.totalSpeakerCharge}',
               color: const Color(0xFFDC2626),
             ),
             _metricCard(
               title: 'Payout today',
-              value: '₹${d.totalListenerPayout}',
+              value: 'Rs ${d.totalListenerPayout}',
               color: const Color(0xFF15803D),
             ),
             _metricCard(
               title: 'Profit today',
-              value: '₹${d.totalPlatformProfit}',
+              value: 'Rs ${d.totalPlatformProfit}',
               color: const Color(0xFFD97706),
             ),
             _metricCard(
@@ -996,7 +1040,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '${pair.callerName} → ${pair.listenerName}',
+                              '${pair.callerName} -> ${pair.listenerName}',
                               style: const TextStyle(
                                 fontWeight: FontWeight.w900,
                                 color: Color(0xFF111827),
@@ -1012,7 +1056,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Answered: ${pair.answeredCalls} • Paid: ${pair.paidCalls}',
+                              'Answered: ${pair.answeredCalls} - Paid: ${pair.paidCalls}',
                               style: const TextStyle(
                                 color: Color(0xFF6B7280),
                                 fontWeight: FontWeight.w700,
@@ -1049,7 +1093,8 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
       );
     }
 
-    final sampledSummaryCount = _metaInt(_summaryMeta, ['coverage', 'sampledCalls']);
+    final sampledSummaryCount =
+        _metaInt(_summaryMeta, ['coverage', 'sampledCalls']);
     if (sampledSummaryCount > 0) {
       summaryChips.add(
         _metaChip(
@@ -1079,7 +1124,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Backend-fed analytics for admins. This screen prefers truthful read-side visibility over pretending every metric is full-history exact.',
+                  'A compact view of platform activity and trends.',
                   style: TextStyle(
                     color: Color(0xFF6B7280),
                     fontWeight: FontWeight.w600,
@@ -1095,6 +1140,18 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
                       onPressed: _reload,
                       icon: const Icon(Icons.refresh),
                       label: const Text('Refresh Analytics'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed:
+                          _refreshingServerCaches ? null : _refreshServerCaches,
+                      icon: _refreshingServerCaches
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.cloud_sync_rounded),
+                      label: const Text('Rebuild Caches'),
                     ),
                     OutlinedButton.icon(
                       onPressed: () {
@@ -1154,7 +1211,8 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
             _metricCard(
               title: 'Total reviews',
               value: '${summary.totalReviews}',
-              subtitle: 'Avg ${summary.averageReviewStars.toStringAsFixed(2)}★',
+              subtitle:
+                  'Avg ${summary.averageReviewStars.toStringAsFixed(2)} stars',
               color: const Color(0xFFF59E0B),
             ),
           ],
@@ -1247,17 +1305,17 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
           children: [
             _metricCard(
               title: 'Total charged',
-              value: '₹${summary.totalSpeakerCharge}',
+              value: 'Rs ${summary.totalSpeakerCharge}',
               color: const Color(0xFFDC2626),
             ),
             _metricCard(
               title: 'Listener payouts',
-              value: '₹${summary.totalListenerPayout}',
+              value: 'Rs ${summary.totalListenerPayout}',
               color: const Color(0xFF15803D),
             ),
             _metricCard(
               title: 'Platform profit',
-              value: '₹${summary.totalPlatformProfit}',
+              value: 'Rs ${summary.totalPlatformProfit}',
               color: const Color(0xFFD97706),
             ),
             _metricCard(
@@ -1294,7 +1352,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
     );
   }
 
-  Widget _buildPermissionDeniedCard(Object error) {
+  Widget _buildPermissionDeniedCard() {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -1329,15 +1387,6 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
                   ),
                 ),
                 const SizedBox(height: 14),
-                Text(
-                  '$error',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Color(0xFF9CA3AF),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 14),
                 FilledButton.icon(
                   onPressed: _reload,
                   icon: const Icon(Icons.refresh_rounded),
@@ -1354,8 +1403,15 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppPalette.pageBg,
       appBar: AppBar(
         title: const Text('Analytics Dashboard'),
+        backgroundColor: AppPalette.card,
+        foregroundColor: AppPalette.textPrimary,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        systemOverlayStyle: SystemUiOverlayStyle.dark,
       ),
       body: FutureBuilder<List<Object>>(
         future: Future.wait<Object>([
@@ -1372,14 +1428,14 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
 
           if (snap.hasError) {
             if (_looksLikePermissionError(snap.error!)) {
-              return _buildPermissionDeniedCard(snap.error!);
+              return _buildPermissionDeniedCard();
             }
 
-            return Center(
+            return const Center(
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: EdgeInsets.all(24),
                 child: Text(
-                  'Could not load analytics.\n\n${snap.error}',
+                  'Could not load analytics. Please try again.',
                   textAlign: TextAlign.center,
                 ),
               ),

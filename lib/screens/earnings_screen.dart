@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../core/theme/app_palette.dart';
 import '../repositories/wallet_repository.dart';
 import '../repositories/user_repository.dart';
 import '../services/call_session_manager.dart';
 import '../services/firestore_service.dart';
 import '../shared/models/app_user_model.dart';
 import '../shared/models/call_model.dart';
+import '../shared/wallet_amount_formatter.dart';
 import 'voice_call_screen.dart';
 
 class EarningsScreen extends StatelessWidget {
@@ -14,18 +17,18 @@ class EarningsScreen extends StatelessWidget {
   Color _callStateColor(CallSessionManager session) {
     switch (session.state) {
       case CallState.connected:
-        return Colors.green;
+        return AppPalette.online;
       case CallState.reconnecting:
-        return Colors.orange;
+        return const Color(0xFFF59E0B);
       case CallState.failed:
       case CallState.ending:
       case CallState.ended:
-        return Colors.red;
+        return const Color(0xFFDC2626);
       case CallState.preparing:
       case CallState.joining:
-        return Colors.indigo;
+        return AppPalette.blue;
       case CallState.idle:
-        return Colors.grey;
+        return AppPalette.textSecondary;
     }
   }
 
@@ -70,10 +73,16 @@ class EarningsScreen extends StatelessWidget {
 
         final call = session.call;
         final otherName = session.iAmCaller
-            ? (((call['calleeName'] ?? '') as Object).toString().trim().isNotEmpty
+            ? (((call['calleeName'] ?? '') as Object)
+                    .toString()
+                    .trim()
+                    .isNotEmpty
                 ? (call['calleeName'] as String).trim()
                 : 'Listener')
-            : (((call['callerName'] ?? '') as Object).toString().trim().isNotEmpty
+            : (((call['callerName'] ?? '') as Object)
+                    .toString()
+                    .trim()
+                    .isNotEmpty
                 ? (call['callerName'] as String).trim()
                 : 'User');
 
@@ -85,79 +94,93 @@ class EarningsScreen extends StatelessWidget {
         final showDuration = session.state == CallState.connected ||
             session.state == CallState.reconnecting;
 
-        return Card(
-          color: Colors.green.shade50,
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              children: [
-                const CircleAvatar(
-                  child: Icon(Icons.call),
+        return Container(
+          decoration: AppPalette.cardDecoration(radius: 18),
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppPalette.online.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Call is active',
+                child: const Icon(
+                  Icons.call,
+                  color: AppPalette.online,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Call is active',
+                      style: TextStyle(
+                        color: AppPalette.textPrimary,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'With $otherName - $safeStateLabel',
+                      style: const TextStyle(
+                        color: AppPalette.textSecondary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      showDuration ? 'Duration $mm:$ss' : 'Connecting...',
+                      style: const TextStyle(
+                        color: AppPalette.textSecondary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: safeStateColor.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: safeStateColor.withValues(alpha: 0.30),
+                        ),
+                      ),
+                      child: Text(
+                        'State: ${session.state.name}',
                         style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 16,
+                          color: safeStateColor,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'With $otherName • $safeStateLabel',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        showDuration ? 'Duration $mm:$ss' : 'Connecting...',
-                        style: const TextStyle(color: Colors.black54),
-                      ),
-                      const SizedBox(height: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: safeStateColor.withValues(alpha: 0.10),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: safeStateColor.withValues(alpha: 0.30),
-                          ),
-                        ),
-                        child: Text(
-                          'State: ${session.state.name}',
-                          style: TextStyle(
-                            color: safeStateColor,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 10),
-                FilledButton(
-                  onPressed: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        settings: const RouteSettings(
-                          name: VoiceCallScreen.routeName,
-                        ),
-                        builder: (_) => const VoiceCallScreen(),
+              ),
+              const SizedBox(width: 10),
+              FilledButton(
+                onPressed: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      settings: const RouteSettings(
+                        name: VoiceCallScreen.routeName,
                       ),
-                    );
-                  },
-                  child: const Text('Open'),
-                ),
-              ],
-            ),
+                      builder: (_) => const VoiceCallScreen(),
+                    ),
+                  );
+                },
+                child: const Text('Open'),
+              ),
+            ],
           ),
         );
       },
@@ -169,34 +192,33 @@ class EarningsScreen extends StatelessWidget {
     String? subtitle,
     required List<Widget> children,
   }) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    return Container(
+      decoration: AppPalette.cardDecoration(radius: 18),
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              color: AppPalette.textPrimary,
+            ),
+          ),
+          if (subtitle != null && subtitle.trim().isNotEmpty) ...[
+            const SizedBox(height: 4),
             Text(
-              title,
+              subtitle,
               style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-                color: Color(0xFF111827),
+                color: AppPalette.textSecondary,
+                fontWeight: FontWeight.w600,
               ),
             ),
-            if (subtitle != null && subtitle.trim().isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: const TextStyle(
-                  color: Color(0xFF6B7280),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-            const SizedBox(height: 14),
-            ...children,
           ],
-        ),
+          const SizedBox(height: 14),
+          ...children,
+        ],
       ),
     );
   }
@@ -210,12 +232,12 @@ class EarningsScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: highlight ? const Color(0xFFEEF2FF) : const Color(0xFFF8FAFC),
+        color: highlight ? AppPalette.blueTint : AppPalette.feedBg,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: highlight
-              ? const Color(0xFFC7D2FE)
-              : const Color(0xFFE5E7EB),
+              ? AppPalette.blue.withValues(alpha: 0.24)
+              : AppPalette.border,
         ),
       ),
       child: Column(
@@ -224,7 +246,7 @@ class EarningsScreen extends StatelessWidget {
           Text(
             label,
             style: const TextStyle(
-              color: Color(0xFF6B7280),
+              color: AppPalette.textSecondary,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -234,9 +256,7 @@ class EarningsScreen extends StatelessWidget {
             style: TextStyle(
               fontSize: highlight ? 24 : 20,
               fontWeight: FontWeight.w900,
-              color: highlight
-                  ? const Color(0xFF312E81)
-                  : const Color(0xFF111827),
+              color: AppPalette.textPrimary,
             ),
           ),
           if (subtitle != null && subtitle.trim().isNotEmpty) ...[
@@ -244,7 +264,7 @@ class EarningsScreen extends StatelessWidget {
             Text(
               subtitle,
               style: const TextStyle(
-                color: Color(0xFF6B7280),
+                color: AppPalette.textSecondary,
                 fontWeight: FontWeight.w600,
                 height: 1.3,
               ),
@@ -259,14 +279,17 @@ class EarningsScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F8),
+        color: AppPalette.blueTint,
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: AppPalette.blue.withValues(alpha: 0.22),
+        ),
       ),
       child: Text(
         '$label: $value',
         style: const TextStyle(
           fontWeight: FontWeight.w800,
-          color: Color(0xFF374151),
+          color: AppPalette.blue,
         ),
       ),
     );
@@ -274,36 +297,39 @@ class EarningsScreen extends StatelessWidget {
 
   Widget _noticeChip(
     String text, {
-    Color bg = const Color(0xFFF3F4F8),
-    Color fg = const Color(0xFF374151),
+    Color? bg,
+    Color? fg,
   }) {
+    final chipBg = bg ?? AppPalette.feedBg;
+    final chipFg = fg ?? AppPalette.textSecondary;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: bg,
+        color: chipBg,
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: chipFg.withValues(alpha: 0.24)),
       ),
       child: Text(
         text,
         style: TextStyle(
           fontWeight: FontWeight.w800,
-          color: fg,
+          color: chipFg,
         ),
       ),
     );
   }
 
   Widget _callCard(CallModel call) {
-    final callerName = call.callerName.trim().isEmpty
-        ? 'Unknown'
-        : call.callerName.trim();
+    final callerName =
+        call.callerName.trim().isEmpty ? 'Unknown' : call.callerName.trim();
     final payout = call.listenerPayout;
     final settlementDone = call.settled || call.listenerCredited;
     final settlementColor = payout <= 0
-        ? const Color(0xFF6B7280)
+        ? AppPalette.textSecondary
         : settlementDone
-            ? const Color(0xFF15803D)
-            : const Color(0xFFD97706);
+            ? AppPalette.online
+            : const Color(0xFFF59E0B);
 
     final settlementLabel = payout <= 0
         ? 'Free'
@@ -314,11 +340,7 @@ class EarningsScreen extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-      ),
+      decoration: AppPalette.cardDecoration(radius: 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -329,12 +351,12 @@ class EarningsScreen extends StatelessWidget {
                   callerName,
                   style: const TextStyle(
                     fontWeight: FontWeight.w900,
-                    color: Color(0xFF111827),
+                    color: AppPalette.textPrimary,
                   ),
                 ),
               ),
               Text(
-                payout <= 0 ? '+₹0' : '+₹$payout',
+                formatSignedWalletAmount(payout),
                 style: TextStyle(
                   fontWeight: FontWeight.w900,
                   color: settlementColor,
@@ -346,7 +368,7 @@ class EarningsScreen extends StatelessWidget {
           Text(
             'Duration: ${_durationLabel(call.endedSeconds)}',
             style: const TextStyle(
-              color: Color(0xFF6B7280),
+              color: AppPalette.textSecondary,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -385,6 +407,7 @@ class EarningsScreen extends StatelessWidget {
       builder: (_, userSnap) {
         if (!userSnap.hasData) {
           return const Scaffold(
+            backgroundColor: AppPalette.pageBg,
             body: Center(child: CircularProgressIndicator()),
           );
         }
@@ -398,153 +421,183 @@ class EarningsScreen extends StatelessWidget {
             final allCalls = callsSnap.data ?? const <CallModel>[];
             final endedCalls = walletRepository.endedCalls(allCalls);
 
-            final totalCredited = walletRepository.totalListenerCredited(endedCalls);
-            final totalPending = walletRepository.totalListenerPending(endedCalls);
+            final totalCredited =
+                walletRepository.totalListenerCredited(endedCalls);
+            final totalPending =
+                walletRepository.totalListenerPending(endedCalls);
             final freeCalls = walletRepository.freeCalls(endedCalls).length;
             final paidCalls = walletRepository.paidCalls(endedCalls).length;
-            final settledCalls = endedCalls
-                .where((e) => e.settled || e.listenerCredited)
-                .length;
+            final settledCalls =
+                endedCalls.where((e) => e.settled || e.listenerCredited).length;
 
-            return Scaffold(
-              appBar: AppBar(title: const Text('Earnings & Safety')),
-              body: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  _activeCallBanner(context, session),
-                  if (session.active) const SizedBox(height: 12),
-                  _sectionCard(
-                    title: 'Earnings overview',
-                    subtitle:
-                        'Listener-side earning visibility for the current build.',
-                    children: [
-                      _statTile(
-                        label: 'Current earnings credits',
-                        value: '₹${me.earningsCredits}',
-                        subtitle: 'Visible earned balance in app',
-                        highlight: true,
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _statTile(
-                              label: 'Credited total',
-                              value: '₹$totalCredited',
-                              subtitle: 'Settled listener earnings',
+            return AnnotatedRegion<SystemUiOverlayStyle>(
+              value: const SystemUiOverlayStyle(
+                statusBarColor: Colors.transparent,
+                statusBarIconBrightness: Brightness.dark,
+                statusBarBrightness: Brightness.light,
+              ),
+              child: Scaffold(
+                backgroundColor: AppPalette.pageBg,
+                appBar: AppBar(
+                  elevation: 0,
+                  scrolledUnderElevation: 0,
+                  backgroundColor: Colors.transparent,
+                  foregroundColor: AppPalette.textPrimary,
+                  surfaceTintColor: Colors.transparent,
+                  title: const Text('Earnings & Safety'),
+                ),
+                body: Theme(
+                  data: AppPalette.lightSheetTheme(context),
+                  child: DecoratedBox(
+                    decoration: const BoxDecoration(color: AppPalette.pageBg),
+                    child: ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        _activeCallBanner(context, session),
+                        if (session.active) const SizedBox(height: 12),
+                        _sectionCard(
+                          title: 'Earnings overview',
+                          subtitle:
+                              'Listener-side earnings and settlement overview.',
+                          children: [
+                            _statTile(
+                              label: 'Current earnings credits',
+                              value: formatWalletAmount(me.earningsCredits),
+                              subtitle: 'Visible earned balance in app',
+                              highlight: true,
                             ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _statTile(
-                              label: 'Pending total',
-                              value: '₹$totalPending',
-                              subtitle: 'Awaiting settlement',
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _statTile(
+                                    label: 'Credited total',
+                                    value: formatWalletAmount(totalCredited),
+                                    subtitle: 'Settled listener earnings',
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: _statTile(
+                                    label: 'Pending total',
+                                    value: formatWalletAmount(totalPending),
+                                    subtitle: 'Awaiting settlement',
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _summaryChip('Ended calls', '${endedCalls.length}'),
-                          _summaryChip('Paid calls', '$paidCalls'),
-                          _summaryChip('Free calls', '$freeCalls'),
-                          _summaryChip('Settled', '$settledCalls'),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  _sectionCard(
-                    title: 'Current payout mode',
-                    subtitle: 'Honest launch-phase payment visibility.',
-                    children: [
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _noticeChip(
-                            'Manual/test payout mode',
-                            bg: const Color(0xFFFFFBEB),
-                            fg: const Color(0xFF92400E),
-                          ),
-                          _noticeChip(
-                            'Not live production payouts',
-                            bg: const Color(0xFFFEF2F2),
-                            fg: const Color(0xFFB91C1C),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'This screen reflects earning visibility and settlement state, but it should not be presented as a fully live commercial payout system yet.',
-                        style: TextStyle(
-                          color: Color(0xFF6B7280),
-                          fontWeight: FontWeight.w600,
-                          height: 1.35,
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _summaryChip(
+                                    'Ended calls', '${endedCalls.length}'),
+                                _summaryChip('Paid calls', '$paidCalls'),
+                                _summaryChip('Free calls', '$freeCalls'),
+                                _summaryChip('Settled', '$settledCalls'),
+                              ],
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  _sectionCard(
-                    title: 'Recent earning calls',
-                    subtitle: 'Latest listener-side earning outcomes.',
-                    children: endedCalls.isEmpty
-                        ? const [
-                            Text(
-                              'No completed calls yet.',
+                        const SizedBox(height: 12),
+                        _sectionCard(
+                          title: 'Payout availability',
+                          subtitle:
+                              'See what support options are currently available for withdrawals.',
+                          children: [
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _noticeChip(
+                                  'Withdrawal requests',
+                                  bg: const Color(0xFFF59E0B)
+                                      .withValues(alpha: 0.14),
+                                  fg: const Color(0xFFB45309),
+                                ),
+                                _noticeChip(
+                                  'Processing may vary',
+                                  bg: const Color(0xFFDC2626)
+                                      .withValues(alpha: 0.12),
+                                  fg: const Color(0xFFDC2626),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'This screen shows earnings and settlement status. '
+                              'Withdrawal requests are handled through the support '
+                              'options currently available in Friendify.',
                               style: TextStyle(
-                                color: Color(0xFF6B7280),
+                                color: AppPalette.textSecondary,
                                 fontWeight: FontWeight.w600,
+                                height: 1.35,
                               ),
                             ),
-                          ]
-                        : endedCalls.take(12).map(_callCard).toList(),
-                  ),
-                  const SizedBox(height: 12),
-                  _sectionCard(
-                    title: 'Blocked users',
-                    subtitle:
-                        'People you have blocked from your own account side.',
-                    children: [
-                      if (blocked.isEmpty)
-                        const Text(
-                          'No blocked users.',
-                          style: TextStyle(
-                            color: Color(0xFF6B7280),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        )
-                      else
-                        ...blocked.map(
-                          (id) => ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: const CircleAvatar(
-                              backgroundColor: Color(0xFFFEF2F2),
-                              child: Icon(
-                                Icons.block,
-                                color: Color(0xFFDC2626),
-                              ),
-                            ),
-                            title: Text(
-                              id,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            trailing: TextButton(
-                              onPressed: () => FirestoreService.unblockUser(id),
-                              child: const Text('Unblock'),
-                            ),
-                          ),
+                          ],
                         ),
-                    ],
+                        const SizedBox(height: 12),
+                        _sectionCard(
+                          title: 'Recent earning calls',
+                          subtitle: 'Latest listener-side earning outcomes.',
+                          children: endedCalls.isEmpty
+                              ? const [
+                                  Text(
+                                    'No completed calls yet.',
+                                    style: TextStyle(
+                                      color: AppPalette.textSecondary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ]
+                              : endedCalls.take(12).map(_callCard).toList(),
+                        ),
+                        const SizedBox(height: 12),
+                        _sectionCard(
+                          title: 'Blocked users',
+                          subtitle:
+                              'People you have blocked from your own account side.',
+                          children: [
+                            if (blocked.isEmpty)
+                              const Text(
+                                'No blocked users.',
+                                style: TextStyle(
+                                  color: AppPalette.textSecondary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              )
+                            else
+                              ...blocked.map(
+                                (id) => ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: const CircleAvatar(
+                                    backgroundColor: Color(0xFFDC2626),
+                                    child: Icon(
+                                      Icons.block,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  title: Text(
+                                    id,
+                                    style: const TextStyle(
+                                      color: AppPalette.textPrimary,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  trailing: TextButton(
+                                    onPressed: () =>
+                                        FirestoreService.unblockUser(id),
+                                    child: const Text('Unblock'),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                ],
+                ),
               ),
             );
           },
