@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../core/constants/firestore_paths.dart';
 import '../core/theme/app_palette.dart';
-import '../core/theme/friendify_brand.dart';
 import '../repositories/call_repository.dart';
 import '../repositories/user_repository.dart';
 import '../services/call_session_manager.dart';
@@ -799,7 +798,7 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
       style: const TextStyle(
         fontSize: 16,
         fontWeight: FontWeight.w900,
-        color: FriendifyBrand.pureWhite,
+        color: AppPalette.textPrimary,
       ),
     );
   }
@@ -838,7 +837,7 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
     return Container(
       padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        color: FriendifyBrand.darkSurfaceElevated,
+        color: AppPalette.feedBg,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: color.withValues(alpha: 0.26)),
       ),
@@ -866,7 +865,7 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
                 Text(
                   label,
                   style: const TextStyle(
-                    color: FriendifyBrand.slate,
+                    color: AppPalette.textSecondary,
                     fontWeight: FontWeight.w700,
                     fontSize: 12.5,
                   ),
@@ -1050,7 +1049,7 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
         style: TextStyle(
           fontSize: size * 0.34,
           fontWeight: FontWeight.w900,
-          color: FriendifyBrand.pureWhite,
+          color: Colors.white,
         ),
       ),
     );
@@ -1075,7 +1074,7 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
     required Widget child,
   }) {
     return Container(
-      decoration: FriendifyBrand.panelDecoration(),
+      decoration: AppPalette.cardDecoration(radius: 18),
       child: Padding(
         padding: const EdgeInsets.all(15),
         child: Column(
@@ -1131,8 +1130,7 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
     bool selected = false,
     bool working = false,
   }) {
-    final color =
-        selected ? AppPalette.blue : AppPalette.textPrimary;
+    final color = selected ? AppPalette.blue : AppPalette.textPrimary;
     return Expanded(
       child: InkWell(
         onTap: working ? null : onTap,
@@ -1527,9 +1525,9 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
                           backgroundColor: Colors.transparent,
                           disabledBackgroundColor: Colors.transparent,
                           shadowColor: Colors.transparent,
-                          foregroundColor: FriendifyBrand.pureWhite,
+                          foregroundColor: Colors.white,
                           disabledForegroundColor:
-                              FriendifyBrand.pureWhite.withValues(alpha: 0.52),
+                              Colors.white.withValues(alpha: 0.52),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(15),
                           ),
@@ -1616,9 +1614,8 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
   Widget _reviewCard(Map<String, dynamic> data) {
     final rawStars = data['stars'];
     final stars = rawStars is num ? rawStars.toInt() : 0;
-    final comment = data['comment'] is String
-        ? (data['comment'] as String).trim()
-        : '';
+    final comment =
+        data['comment'] is String ? (data['comment'] as String).trim() : '';
 
     return Container(
       width: double.infinity,
@@ -1751,7 +1748,8 @@ class _ListenerProfileScreenState extends State<ListenerProfileScreen> {
                     return Scaffold(
                       backgroundColor: AppPalette.pageBg,
                       body: DecoratedBox(
-                        decoration: const BoxDecoration(color: AppPalette.pageBg),
+                        decoration:
+                            const BoxDecoration(color: AppPalette.pageBg),
                         child: _buildBody(
                           me: me,
                           user: user,

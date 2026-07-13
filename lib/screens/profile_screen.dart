@@ -11,7 +11,6 @@ import 'package:image_picker/image_picker.dart';
 
 import '../core/constants/storage_paths.dart';
 import '../core/theme/app_palette.dart';
-import '../core/theme/friendify_brand.dart';
 import '../repositories/social_repository.dart';
 import '../repositories/user_repository.dart';
 import '../services/auth_scoped_subscriptions.dart';
@@ -2480,11 +2479,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             body: DecoratedBox(
               decoration: const BoxDecoration(color: AppPalette.pageBg),
               child: ListView(
-                padding: FriendifyBrand.screenPadding(
-                  context,
-                  top: 12,
-                  bottom: 104,
-                ),
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 104),
                 children: [
                   SafeArea(
                     bottom: false,
