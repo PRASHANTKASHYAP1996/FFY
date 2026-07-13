@@ -40,6 +40,22 @@ class _RedesignShellState extends State<RedesignShell> {
     _MePage(),
   ];
 
+  final Stream<List<Map<String, dynamic>>> _sessions =
+      CallRepository.instance.watchCurrentUserChatSessions();
+  final String _myUid = UserRepository.instance.myUidOrNull ?? '';
+
+  /// Number of conversations with unread messages (for the Chats tab badge).
+  int _unreadChats(List<Map<String, dynamic>> sessions) {
+    var count = 0;
+    for (final s in sessions) {
+      final unread = s['speakerId'] == _myUid
+          ? s['speakerUnreadCount']
+          : s['listenerUnreadCount'];
+      if (unread is num && unread > 0) count++;
+    }
+    return count;
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -51,9 +67,14 @@ class _RedesignShellState extends State<RedesignShell> {
       child: Scaffold(
         backgroundColor: AppPalette.pageBg,
         body: IndexedStack(index: _index, children: _pages),
-        bottomNavigationBar: _BottomNav(
-          index: _index,
-          onTap: (i) => setState(() => _index = i),
+        bottomNavigationBar: StreamBuilder<List<Map<String, dynamic>>>(
+          stream: _sessions,
+          builder: (context, snap) => _BottomNav(
+            index: _index,
+            onTap: (i) => setState(() => _index = i),
+            chatsUnread:
+                _unreadChats(snap.data ?? const <Map<String, dynamic>>[]),
+          ),
         ),
       ),
     );
@@ -61,10 +82,15 @@ class _RedesignShellState extends State<RedesignShell> {
 }
 
 class _BottomNav extends StatelessWidget {
-  const _BottomNav({required this.index, required this.onTap});
+  const _BottomNav({
+    required this.index,
+    required this.onTap,
+    this.chatsUnread = 0,
+  });
 
   final int index;
   final ValueChanged<int> onTap;
+  final int chatsUnread;
 
   @override
   Widget build(BuildContext context) {
@@ -80,7 +106,8 @@ class _BottomNav extends StatelessWidget {
           child: Row(
             children: [
               _navItem(0, Icons.explore_outlined, 'Discover'),
-              _navItem(1, Icons.chat_bubble_outline_rounded, 'Chats'),
+              _navItem(1, Icons.chat_bubble_outline_rounded, 'Chats',
+                  badge: chatsUnread),
               _callButton(),
               _navItem(3, Icons.auto_awesome_outlined, 'Feed'),
               _navItem(4, Icons.person_outline_rounded, 'Me'),
@@ -91,7 +118,7 @@ class _BottomNav extends StatelessWidget {
     );
   }
 
-  Widget _navItem(int i, IconData icon, String label) {
+  Widget _navItem(int i, IconData icon, String label, {int badge = 0}) {
     final selected = index == i;
     final color = selected ? AppPalette.blue : AppPalette.textMuted;
     return Expanded(
@@ -100,7 +127,35 @@ class _BottomNav extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 23, color: color),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(icon, size: 23, color: color),
+                if (badge > 0)
+                  Positioned(
+                    right: -8,
+                    top: -5,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 4, vertical: 1),
+                      constraints: const BoxConstraints(minWidth: 15),
+                      decoration: BoxDecoration(
+                        color: AppPalette.rose,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        badge > 99 ? '99+' : '$badge',
+                        style: const TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
             const SizedBox(height: 2),
             Text(
               label,
