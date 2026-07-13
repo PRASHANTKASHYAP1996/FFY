@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../core/theme/app_palette.dart';
 import '../services/firestore_service.dart';
 
 class RateCallScreen extends StatefulWidget {
@@ -91,7 +93,11 @@ class _RateCallScreenState extends State<RateCallScreen> {
   void _showSnack(String text) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(text)),
+      SnackBar(
+        content: Text(text),
+        backgroundColor: AppPalette.textPrimary,
+        behavior: SnackBarBehavior.floating,
+      ),
     );
   }
 
@@ -167,97 +173,128 @@ class _RateCallScreenState extends State<RateCallScreen> {
         final wasAnswered = _wasAnswered(call);
 
         return Scaffold(
-          appBar: AppBar(title: const Text('Rate your call')),
-          body: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 520),
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(18),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircleAvatar(
-                          radius: 30,
-                          child: Text(
-                            safeOtherName.isNotEmpty
-                                ? safeOtherName[0].toUpperCase()
-                                : 'U',
-                            style: const TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w900,
+          backgroundColor: AppPalette.pageBg,
+          appBar: AppBar(
+            elevation: 0,
+            scrolledUnderElevation: 0,
+            backgroundColor: Colors.transparent,
+            foregroundColor: AppPalette.textPrimary,
+            surfaceTintColor: Colors.transparent,
+            systemOverlayStyle: SystemUiOverlayStyle.dark,
+            title: const Text('Rate your call'),
+          ),
+          body: Theme(
+            data: AppPalette.lightSheetTheme(context),
+            child: DecoratedBox(
+              decoration: const BoxDecoration(color: AppPalette.pageBg),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 520),
+                    child: Container(
+                      decoration: AppPalette.cardDecoration(radius: 18),
+                      padding: const EdgeInsets.all(18),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 64,
+                            height: 64,
+                            decoration: BoxDecoration(
+                              color: AppPalette.blue,
+                              borderRadius: BorderRadius.circular(22),
+                              boxShadow: [
+                                BoxShadow(
+                                  blurRadius: 22,
+                                  offset: const Offset(0, 10),
+                                  color: AppPalette.blue.withValues(
+                                    alpha: 0.24,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              safeOtherName.isNotEmpty
+                                  ? safeOtherName[0].toUpperCase()
+                                  : 'U',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'How was $safeOtherName?',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
+                          const SizedBox(height: 12),
+                          Text(
+                            'How was $safeOtherName?',
+                            style: const TextStyle(
+                              color: AppPalette.textPrimary,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                            ),
+                            textAlign: TextAlign.center,
                           ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Call duration: $durationLabel',
-                          style: const TextStyle(
-                            color: Colors.black54,
-                            fontWeight: FontWeight.w700,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 12),
-                        if (!wasAnswered)
-                          const Text(
-                            'This call was not fully answered, so rating is unavailable.',
-                            style: TextStyle(
-                              color: Colors.black54,
+                          const SizedBox(height: 8),
+                          Text(
+                            'Call duration: $durationLabel',
+                            style: const TextStyle(
+                              color: AppPalette.textSecondary,
                               fontWeight: FontWeight.w700,
                             ),
                             textAlign: TextAlign.center,
-                          )
-                        else ...[
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              _star(1),
-                              _star(2),
-                              _star(3),
-                              _star(4),
-                              _star(5),
-                            ],
                           ),
                           const SizedBox(height: 12),
-                          TextField(
-                            controller: _text,
-                            maxLines: 3,
-                            maxLength: 240,
-                            enabled: !_saving,
-                            decoration: const InputDecoration(
-                              labelText: 'Optional review',
-                              hintText:
-                                  'Share what felt helpful, respectful, or needs improvement.',
+                          if (!wasAnswered)
+                            const Text(
+                              'This call was not fully answered, so rating is unavailable.',
+                              style: TextStyle(
+                                color: AppPalette.textSecondary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              textAlign: TextAlign.center,
+                            )
+                          else ...[
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                _star(1),
+                                _star(2),
+                                _star(3),
+                                _star(4),
+                                _star(5),
+                              ],
                             ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: _text,
+                              maxLines: 3,
+                              maxLength: 240,
+                              enabled: !_saving,
+                              decoration: const InputDecoration(
+                                labelText: 'Optional review',
+                                hintText:
+                                    'Share what felt helpful, respectful, or needs improvement.',
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 16),
+                          FilledButton(
+                            onPressed: (!wasAnswered || _saving)
+                                ? null
+                                : () => _submit(call),
+                            child: Text(_saving ? 'Saving...' : 'Submit'),
+                          ),
+                          const SizedBox(height: 6),
+                          TextButton(
+                            onPressed: _saving
+                                ? null
+                                : () => Navigator.pop(context, false),
+                            child: Text(wasAnswered ? 'Skip' : 'Close'),
                           ),
                         ],
-                        const SizedBox(height: 16),
-                        FilledButton(
-                          onPressed: (!wasAnswered || _saving)
-                              ? null
-                              : () => _submit(call),
-                          child: Text(_saving ? 'Saving...' : 'Submit'),
-                        ),
-                        const SizedBox(height: 6),
-                        TextButton(
-                          onPressed: _saving
-                              ? null
-                              : () => Navigator.pop(context, false),
-                          child: Text(wasAnswered ? 'Skip' : 'Close'),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ),

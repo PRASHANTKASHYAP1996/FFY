@@ -34,6 +34,26 @@ class AppPalette {
     );
   }
 
+  // Immersive call screens: a calm deep-blue gradient with light content on top.
+  // Purpose-built for the ringing + live-call screens (not the light surfaces).
+  static const LinearGradient callGradient = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: [Color(0xFF17357E), Color(0xFF244FBE), Color(0xFF2F6FED)],
+  );
+  static const Color callAccent = Color(0xFFBFD4FF); // light blue on gradient
+  static const Color callSuccess = Color(0xFF6FE0BE); // light green
+  static const Color callDanger = Color(0xFFFF6B6B); // light red
+
+  /// Frosted translucent card used on top of [callGradient].
+  static BoxDecoration callCardDecoration({double radius = 18}) {
+    return BoxDecoration(
+      color: Colors.white.withValues(alpha: 0.10),
+      borderRadius: BorderRadius.circular(radius),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+    );
+  }
+
   /// The app's global input/button themes are tuned for dark surfaces
   /// (translucent-white fills, purple accents) and are nearly invisible on the
   /// light sheets used by the redesign. Wrap a light bottom sheet's content in
