@@ -1,6 +1,7 @@
 # Miscellaneous
 *.class
 *.log
+logs/
 *.pyc
 *.swp
 .DS_Store
@@ -49,6 +50,7 @@ app.*.map.json
 /android/.kotlin/
 /functions/node_modules/
 /functions/.firebase/
+/.firebase/
 /functions/lib/
 /firebase-debug.log
 firestore-debug.log
@@ -56,8 +58,35 @@ ui-debug.log
 
 # local/sensitive cleanup
 functions/*.json
+!functions/.eslintrc.json
 !functions/package.json
+functions/service-account.json
+functions/*firebase-adminsdk*.json
 functions/.env
 android/local.properties
+android/key.properties
+*.jks
+*.keystore
 android/.gradle/
 android/.kotlin/
+
+# Local backup/export artifacts
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz
+*.mp4
+*.mov
+*.mkv
+*.webm
+
+# Local Codex/device scratch artifacts
+.codex_tmp/
+*.tmp
+*.bak
+*.orig
+*.bat
+
+# Stale generated Firebase config snapshots kept only for local comparison
+*.stale.*
