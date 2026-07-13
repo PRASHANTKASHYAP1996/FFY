@@ -139,23 +139,6 @@ class SocialRepository {
     });
   }
 
-  Stream<List<SocialPostModel>> watchActiveStories({int limit = 80}) {
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final safeLimit = limit < 1 ? 1 : limit;
-    return _posts
-        .where(FirestorePaths.fieldSocialExpiresAtMs, isGreaterThan: now)
-        .orderBy(FirestorePaths.fieldSocialExpiresAtMs)
-        .limit(safeLimit * 2)
-        .snapshots()
-        .map((query) {
-      final stories = _postsFromQuery(query)
-          .where((post) => post.isStory && post.expiresAtMs > now)
-          .toList(growable: false);
-      stories.sort((a, b) => b.createdAtMs.compareTo(a.createdAtMs));
-      return stories.take(safeLimit).toList(growable: false);
-    });
-  }
-
   Stream<List<SocialCommentModel>> watchComments(String postId,
       {int limit = 80}) {
     final safePostId = postId.trim();

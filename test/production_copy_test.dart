@@ -61,7 +61,7 @@ void main() {
       '$root/lib/screens/auth_screen.dart',
       '$root/lib/screens/crisis_help_screen.dart',
       '$root/lib/screens/earnings_screen.dart',
-      '$root/lib/screens/home_screen.dart',
+      '$root/lib/screens/redesign/redesign_shell.dart',
       '$root/lib/screens/chat_conversation_screen.dart',
       '$root/lib/screens/listener_leaderboard_screen.dart',
       '$root/lib/screens/listener_profile_screen.dart',
