@@ -10,7 +10,7 @@ import 'package:flutter/services.dart';
 import '../core/constants/agora_client_config.dart';
 import '../core/constants/firestore_paths.dart';
 import '../core/constants/ui_copy.dart';
-import '../core/theme/friendify_brand.dart';
+import '../core/theme/app_palette.dart';
 import '../repositories/call_repository.dart';
 import '../repositories/user_repository.dart';
 import '../services/app_log.dart';
@@ -330,10 +330,10 @@ Widget _buildChatSystemTile(
         constraints: const BoxConstraints(maxWidth: 320),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: FriendifyBrand.pureWhite.withValues(alpha: 0.07),
+          color: AppPalette.feedBg,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: FriendifyBrand.pureWhite.withValues(alpha: 0.08),
+            color: AppPalette.border,
           ),
         ),
         child: Column(
@@ -342,7 +342,7 @@ Widget _buildChatSystemTile(
               text,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                color: FriendifyBrand.slate,
+                color: AppPalette.textSecondary,
                 fontWeight: FontWeight.w800,
                 height: 1.35,
               ),
@@ -352,7 +352,7 @@ Widget _buildChatSystemTile(
               Text(
                 time,
                 style: const TextStyle(
-                  color: FriendifyBrand.slate,
+                  color: AppPalette.textMuted,
                   fontWeight: FontWeight.w700,
                   fontSize: 11.5,
                 ),
@@ -387,8 +387,7 @@ Widget _buildChatMessageBubble(
     constraints: const BoxConstraints(maxWidth: 290),
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
     decoration: BoxDecoration(
-      gradient: isMine ? FriendifyBrand.primaryGradient : null,
-      color: isMine ? null : FriendifyBrand.pureWhite.withValues(alpha: 0.08),
+      color: isMine ? AppPalette.blue : AppPalette.card,
       borderRadius: BorderRadius.only(
         topLeft: const Radius.circular(18),
         topRight: const Radius.circular(18),
@@ -398,13 +397,13 @@ Widget _buildChatMessageBubble(
       border: isMine
           ? null
           : Border.all(
-              color: FriendifyBrand.pureWhite.withValues(alpha: 0.08),
+              color: AppPalette.border,
             ),
       boxShadow: [
         BoxShadow(
-          blurRadius: 14,
-          offset: const Offset(0, 4),
-          color: Colors.black.withValues(alpha: 0.20),
+          blurRadius: 10,
+          offset: const Offset(0, 3),
+          color: Colors.black.withValues(alpha: 0.05),
         ),
       ],
     ),
@@ -414,8 +413,8 @@ Widget _buildChatMessageBubble(
       children: [
         Text(
           text,
-          style: const TextStyle(
-            color: FriendifyBrand.pureWhite,
+          style: TextStyle(
+            color: isMine ? Colors.white : AppPalette.textPrimary,
             fontSize: 15,
             fontWeight: FontWeight.w600,
             height: 1.35,
@@ -430,7 +429,7 @@ Widget _buildChatMessageBubble(
               style: TextStyle(
                 color: isMine
                     ? Colors.white.withValues(alpha: 0.86)
-                    : FriendifyBrand.slate,
+                    : AppPalette.textMuted,
                 fontSize: 11.5,
                 fontWeight: FontWeight.w700,
               ),
@@ -2510,12 +2509,12 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   }
 
   Color _statusColor(Map<String, dynamic> session) {
-    if (_sessionIsBlocked(session)) return FriendifyBrand.danger;
-    if (_hasBlockingCallState) return FriendifyBrand.lavenderGlow;
-    if (!_sessionExists(session)) return FriendifyBrand.slate;
-    if (_sessionAcceptedForUi(session)) return FriendifyBrand.mintGreen;
-    if (_sessionCallRequestOpen(session)) return FriendifyBrand.warning;
-    return FriendifyBrand.lavenderGlow;
+    if (_sessionIsBlocked(session)) return const Color(0xFFDC2626);
+    if (_hasBlockingCallState) return AppPalette.blue;
+    if (!_sessionExists(session)) return AppPalette.textSecondary;
+    if (_sessionAcceptedForUi(session)) return AppPalette.online;
+    if (_sessionCallRequestOpen(session)) return const Color(0xFFF59E0B);
+    return AppPalette.blue;
   }
 
   String _statusText(Map<String, dynamic> session) {
@@ -3150,7 +3149,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: FriendifyBrand.pureWhite.withValues(alpha: 0.06),
+        color: AppPalette.feedBg,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: color.withValues(alpha: 0.32)),
       ),
@@ -3182,7 +3181,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                 Text(
                   _statusSubtitle(session),
                   style: const TextStyle(
-                    color: FriendifyBrand.slate,
+                    color: AppPalette.textSecondary,
                     fontWeight: FontWeight.w600,
                     height: 1.3,
                   ),
@@ -3355,35 +3354,15 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        gradient: _hasBlockingCallState
-            ? null
-            : acceptedSpeaker
-                ? FriendifyBrand.primaryGradient
-                : pendingForMe
-                    ? FriendifyBrand.cardGradient
-                    : null,
-        color: _hasBlockingCallState
-            ? FriendifyBrand.pureWhite.withValues(alpha: 0.06)
-            : acceptedSpeaker
-                ? null
-                : (pendingByMe || pendingForMe || acceptedListener)
-                    ? FriendifyBrand.pureWhite.withValues(alpha: 0.06)
-                    : FriendifyBrand.pureWhite.withValues(alpha: 0.05),
+        color: acceptedSpeaker && !_hasBlockingCallState
+            ? AppPalette.blueTint
+            : AppPalette.feedBg,
         borderRadius: BorderRadius.circular(20),
-        border: acceptedSpeaker && !_hasBlockingCallState
-            ? null
-            : Border.all(
-                color: FriendifyBrand.pureWhite.withValues(alpha: 0.09),
-              ),
-        boxShadow: acceptedSpeaker && !_hasBlockingCallState
-            ? const [
-                BoxShadow(
-                  blurRadius: 20,
-                  offset: Offset(0, 8),
-                  color: Color(0x224F46E5),
-                ),
-              ]
-            : const [],
+        border: Border.all(
+          color: acceptedSpeaker && !_hasBlockingCallState
+              ? AppPalette.blue.withValues(alpha: 0.30)
+              : AppPalette.border,
+        ),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -3396,19 +3375,13 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: _hasBlockingCallState
-                      ? FriendifyBrand.pureWhite.withValues(alpha: 0.08)
-                      : acceptedSpeaker
-                          ? Colors.white.withValues(alpha: 0.16)
-                          : (pendingByMe ||
-                                  pendingForMe ||
-                                  acceptedListener ||
-                                  acceptedSpeakerPaused ||
-                                  acceptedListenerPaused)
-                              ? FriendifyBrand.mintGreen.withValues(alpha: 0.14)
-                              : FriendifyBrand.pureWhite.withValues(
-                                  alpha: 0.07,
-                                ),
+                  color: (pendingByMe ||
+                          pendingForMe ||
+                          acceptedListener ||
+                          acceptedSpeakerPaused ||
+                          acceptedListenerPaused)
+                      ? AppPalette.online.withValues(alpha: 0.14)
+                      : AppPalette.blue.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(
@@ -3430,17 +3403,13 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                                                   .peerOnlyChatMode
                                       ? Icons.chat_bubble_outline_rounded
                                       : Icons.call_outlined,
-                  color: _hasBlockingCallState
-                      ? FriendifyBrand.lavenderGlow
-                      : acceptedSpeaker
-                          ? Colors.white
-                          : (pendingByMe ||
-                                  pendingForMe ||
-                                  acceptedListener ||
-                                  acceptedSpeakerPaused ||
-                                  acceptedListenerPaused)
-                              ? FriendifyBrand.mintGreen
-                              : FriendifyBrand.slate,
+                  color: (pendingByMe ||
+                          pendingForMe ||
+                          acceptedListener ||
+                          acceptedSpeakerPaused ||
+                          acceptedListenerPaused)
+                      ? AppPalette.online
+                      : AppPalette.blue,
                 ),
               ),
               const SizedBox(width: 12),
@@ -3451,11 +3420,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                     Text(
                       title,
                       style: TextStyle(
-                        color: _hasBlockingCallState
-                            ? FriendifyBrand.lavenderGlow
-                            : acceptedSpeaker
-                                ? Colors.white
-                                : FriendifyBrand.pureWhite,
+                        color: _hasBlockingCallState || acceptedSpeaker
+                            ? AppPalette.blue
+                            : AppPalette.textPrimary,
                         fontWeight: FontWeight.w900,
                         fontSize: 15,
                       ),
@@ -3465,10 +3432,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                       effectiveStartSubtitle,
                       style: TextStyle(
                         color: _hasBlockingCallState
-                            ? FriendifyBrand.lavenderGlow
-                            : acceptedSpeaker
-                                ? const Color(0xFFEDE9FE)
-                                : FriendifyBrand.slate,
+                            ? AppPalette.blue
+                            : AppPalette.textSecondary,
                         fontWeight: FontWeight.w600,
                         height: 1.3,
                       ),
@@ -3496,11 +3461,10 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                                 ? () => _acceptCallRequest(session)
                                 : null,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: FriendifyBrand.softViolet,
+                      backgroundColor: AppPalette.blue,
                       foregroundColor: Colors.white,
-                      disabledBackgroundColor:
-                          FriendifyBrand.pureWhite.withValues(alpha: 0.08),
-                      disabledForegroundColor: FriendifyBrand.slate,
+                      disabledBackgroundColor: AppPalette.border,
+                      disabledForegroundColor: AppPalette.textMuted,
                       elevation: 0,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
@@ -3604,11 +3568,11 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
 
     return CircleAvatar(
       radius: 20,
-      backgroundColor: FriendifyBrand.softViolet.withValues(alpha: 0.20),
+      backgroundColor: AppPalette.blueTint,
       child: Text(
         first,
         style: const TextStyle(
-          color: FriendifyBrand.lavenderGlow,
+          color: AppPalette.blue,
           fontWeight: FontWeight.w900,
         ),
       ),
@@ -3623,7 +3587,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       width: width,
       height: height,
       decoration: BoxDecoration(
-        color: FriendifyBrand.pureWhite.withValues(alpha: 0.12),
+        color: AppPalette.divider,
         borderRadius: BorderRadius.circular(999),
       ),
     );
@@ -3633,8 +3597,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     return Container(
       width: 40,
       height: 40,
-      decoration: BoxDecoration(
-        color: FriendifyBrand.pureWhite.withValues(alpha: 0.10),
+      decoration: const BoxDecoration(
+        color: AppPalette.divider,
         shape: BoxShape.circle,
       ),
     );
@@ -3668,9 +3632,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                     subtitleText,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: blocked
-                          ? FriendifyBrand.danger
-                          : FriendifyBrand.lavenderGlow,
+                      color:
+                          blocked ? const Color(0xFFDC2626) : AppPalette.blue,
                       fontWeight: FontWeight.w700,
                       fontSize: 12.5,
                     ),
@@ -3701,15 +3664,16 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
             : availability?.label ?? 'Identity unavailable';
 
     final subtitleColor = blocked
-        ? FriendifyBrand.danger
+        ? const Color(0xFFDC2626)
         : _hasBlockingCallState
-            ? FriendifyBrand.lavenderGlow
+            ? AppPalette.blue
             : switch (availability?.kind) {
-                ListenerAvailabilityKind.available => FriendifyBrand.mintGreen,
-                ListenerAvailabilityKind.onAnotherCall => FriendifyBrand.danger,
-                ListenerAvailabilityKind.checking => FriendifyBrand.warning,
-                ListenerAvailabilityKind.offline => FriendifyBrand.slate,
-                null => FriendifyBrand.slate,
+                ListenerAvailabilityKind.available => AppPalette.online,
+                ListenerAvailabilityKind.onAnotherCall =>
+                  const Color(0xFFDC2626),
+                ListenerAvailabilityKind.checking => const Color(0xFFF59E0B),
+                ListenerAvailabilityKind.offline => AppPalette.textSecondary,
+                null => AppPalette.textSecondary,
               };
 
     return Row(
@@ -3727,7 +3691,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                 style: const TextStyle(
                   fontWeight: FontWeight.w900,
                   fontSize: 16,
-                  color: FriendifyBrand.pureWhite,
+                  color: AppPalette.textPrimary,
                 ),
               ),
               const SizedBox(height: 2),
@@ -3791,13 +3755,13 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                   width: 74,
                   height: 74,
                   decoration: BoxDecoration(
-                    gradient: FriendifyBrand.primaryGradient,
+                    color: AppPalette.blue,
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: [
                       BoxShadow(
                         blurRadius: 24,
-                        color: FriendifyBrand.softViolet.withValues(
-                          alpha: 0.28,
+                        color: AppPalette.blue.withValues(
+                          alpha: 0.24,
                         ),
                       ),
                     ],
@@ -3805,7 +3769,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                   child: const Icon(
                     Icons.chat_bubble_outline_rounded,
                     size: 34,
-                    color: FriendifyBrand.pureWhite,
+                    color: Colors.white,
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -3815,7 +3779,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w900,
-                    color: FriendifyBrand.pureWhite,
+                    color: AppPalette.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -3827,7 +3791,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                           : 'Send your first message. $name can help with ${topics.join(', ')}.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
-                    color: FriendifyBrand.slate,
+                    color: AppPalette.textSecondary,
                     fontWeight: FontWeight.w600,
                     height: 1.45,
                   ),
@@ -3879,12 +3843,12 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       ),
       avatar: const Icon(Icons.add_comment_outlined, size: 18),
       visualDensity: VisualDensity.compact,
-      backgroundColor: FriendifyBrand.pureWhite.withValues(alpha: 0.08),
-      side: BorderSide(
-        color: FriendifyBrand.pureWhite.withValues(alpha: 0.10),
+      backgroundColor: AppPalette.blueTint,
+      side: const BorderSide(
+        color: AppPalette.blueTint,
       ),
       labelStyle: const TextStyle(
-        color: FriendifyBrand.pureWhite,
+        color: AppPalette.blue,
         fontWeight: FontWeight.w700,
         fontSize: 12,
       ),
@@ -3909,15 +3873,15 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
       child: Container(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
         decoration: BoxDecoration(
-          color: FriendifyBrand.darkSurface.withValues(alpha: 0.96),
+          color: AppPalette.card,
           border: const Border(
-            top: BorderSide(color: FriendifyBrand.darkStroke),
+            top: BorderSide(color: AppPalette.border),
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.26),
-              blurRadius: 18,
-              offset: const Offset(0, -6),
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 12,
+              offset: const Offset(0, -4),
             ),
           ],
         ),
@@ -3932,18 +3896,11 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                 ),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: FriendifyBrand.pureWhite.withValues(alpha: 0.07),
+                    color: AppPalette.feedBg,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: FriendifyBrand.pureWhite.withValues(alpha: 0.10),
+                      color: AppPalette.border,
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                        color: Colors.black.withValues(alpha: 0.20),
-                      ),
-                    ],
                   ),
                   child: TextField(
                     controller: _messageController,
@@ -3951,9 +3908,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                     autofocus: false,
                     canRequestFocus: !disabled,
                     enabled: !disabled,
-                    cursorColor: FriendifyBrand.lavenderGlow,
+                    cursorColor: AppPalette.blue,
                     style: const TextStyle(
-                      color: FriendifyBrand.pureWhite,
+                      color: AppPalette.textPrimary,
                       fontWeight: FontWeight.w600,
                     ),
                     minLines: 1,
@@ -3969,7 +3926,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                     decoration: InputDecoration(
                       prefixIcon: const Icon(
                         Icons.chat_bubble_outline_rounded,
-                        color: FriendifyBrand.slate,
+                        color: AppPalette.textMuted,
                         size: 20,
                       ),
                       prefixIconConstraints: const BoxConstraints(
@@ -3984,7 +3941,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                                   ? 'Preparing chat...'
                                   : 'Type your message...',
                       hintStyle: const TextStyle(
-                        color: FriendifyBrand.slate,
+                        color: AppPalette.textMuted,
                         fontWeight: FontWeight.w600,
                       ),
                       border: InputBorder.none,
@@ -4003,18 +3960,14 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
               height: 52,
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  gradient: sendReady ? FriendifyBrand.primaryGradient : null,
-                  color: sendReady
-                      ? null
-                      : FriendifyBrand.pureWhite.withValues(alpha: 0.07),
+                  color: sendReady ? AppPalette.blue : AppPalette.feedBg,
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: sendReady
                       ? [
                           BoxShadow(
                             blurRadius: 14,
                             offset: const Offset(0, 6),
-                            color: FriendifyBrand.softViolet
-                                .withValues(alpha: 0.28),
+                            color: AppPalette.blue.withValues(alpha: 0.28),
                           ),
                         ]
                       : const [],
@@ -4035,9 +3988,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                         )
                       : Icon(
                           Icons.send_rounded,
-                          color: sendReady
-                              ? FriendifyBrand.pureWhite
-                              : FriendifyBrand.slate,
+                          color:
+                              sendReady ? Colors.white : AppPalette.textMuted,
                         ),
                 ),
               ),
@@ -4199,117 +4151,120 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
             ? 'We stopped before opening the wrong conversation path. You can open the existing conversation safely or go back.'
             : 'Something went wrong while getting this chat ready.';
 
-    return SafeArea(
-      top: false,
-      child: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 78,
-                  height: 78,
-                  decoration: BoxDecoration(
-                    color: FriendifyBrand.danger.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(
-                      color: FriendifyBrand.danger.withValues(alpha: 0.22),
-                    ),
-                  ),
-                  child: const Icon(
-                    Icons.error_outline_rounded,
-                    size: 38,
-                    color: FriendifyBrand.danger,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  title,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 21,
-                    fontWeight: FontWeight.w900,
-                    color: FriendifyBrand.pureWhite,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  subtitle,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: FriendifyBrand.slate,
-                    fontWeight: FontWeight.w600,
-                    height: 1.45,
-                  ),
-                ),
-                if ((_bootstrapErrorMessage ?? '').trim().isNotEmpty) ...[
-                  const SizedBox(height: 10),
+    return Theme(
+      data: AppPalette.lightSheetTheme(context),
+      child: SafeArea(
+        top: false,
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
                   Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
+                    width: 78,
+                    height: 78,
                     decoration: BoxDecoration(
-                      color: FriendifyBrand.pureWhite.withValues(alpha: 0.07),
-                      borderRadius: BorderRadius.circular(16),
+                      color: const Color(0xFFDC2626).withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(24),
                       border: Border.all(
-                        color: FriendifyBrand.pureWhite.withValues(alpha: 0.08),
+                        color: const Color(0xFFDC2626).withValues(alpha: 0.22),
                       ),
                     ),
-                    child: Text(
-                      _bootstrapErrorMessage!,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: FriendifyBrand.slate,
-                        fontWeight: FontWeight.w600,
-                        height: 1.35,
+                    child: const Icon(
+                      Icons.error_outline_rounded,
+                      size: 38,
+                      color: Color(0xFFDC2626),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 21,
+                      fontWeight: FontWeight.w900,
+                      color: AppPalette.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    subtitle,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: AppPalette.textSecondary,
+                      fontWeight: FontWeight.w600,
+                      height: 1.45,
+                    ),
+                  ),
+                  if ((_bootstrapErrorMessage ?? '').trim().isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppPalette.feedBg,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: AppPalette.border,
+                        ),
+                      ),
+                      child: Text(
+                        _bootstrapErrorMessage!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: AppPalette.textSecondary,
+                          fontWeight: FontWeight.w600,
+                          height: 1.35,
+                        ),
                       ),
                     ),
+                  ],
+                  const SizedBox(height: 16),
+                  if (canOpenExisting)
+                    ElevatedButton.icon(
+                      onPressed: _openExistingConversationDirection,
+                      icon: const Icon(Icons.chat_bubble_outline_rounded),
+                      label: const Text('Open conversation'),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 14,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                    )
+                  else
+                    ElevatedButton.icon(
+                      onPressed: _retryBootstrap,
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('Retry'),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 14,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 10),
+                  TextButton(
+                    onPressed: () {
+                      _dismissComposerFocus();
+                      if (Navigator.of(context).canPop()) {
+                        Navigator.of(context).pop();
+                      }
+                    },
+                    child: const Text('Back'),
                   ),
                 ],
-                const SizedBox(height: 16),
-                if (canOpenExisting)
-                  ElevatedButton.icon(
-                    onPressed: _openExistingConversationDirection,
-                    icon: const Icon(Icons.chat_bubble_outline_rounded),
-                    label: const Text('Open conversation'),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 14,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                  )
-                else
-                  ElevatedButton.icon(
-                    onPressed: _retryBootstrap,
-                    icon: const Icon(Icons.refresh_rounded),
-                    label: const Text('Retry'),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 14,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 10),
-                TextButton(
-                  onPressed: () {
-                    _dismissComposerFocus();
-                    if (Navigator.of(context).canPop()) {
-                      Navigator.of(context).pop();
-                    }
-                  },
-                  child: const Text('Back'),
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -4414,13 +4369,14 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                               _dismissComposerFocus();
                             },
                             child: Scaffold(
-                              backgroundColor: FriendifyBrand.deepIndigo,
+                              backgroundColor: AppPalette.pageBg,
                               appBar: AppBar(
                                 elevation: 0,
                                 scrolledUnderElevation: 0,
-                                backgroundColor: FriendifyBrand.darkSurface,
-                                foregroundColor: FriendifyBrand.pureWhite,
+                                backgroundColor: AppPalette.card,
+                                foregroundColor: AppPalette.textPrimary,
                                 surfaceTintColor: Colors.transparent,
+                                systemOverlayStyle: SystemUiOverlayStyle.dark,
                                 titleSpacing: 8,
                                 title: _buildAppBarTitle(
                                   otherUser,
@@ -4432,9 +4388,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                                     tooltip: 'Safety actions',
                                     icon: const Icon(
                                       Icons.shield_outlined,
-                                      color: FriendifyBrand.lavenderGlow,
+                                      color: AppPalette.blue,
                                     ),
-                                    color: FriendifyBrand.darkSurfaceElevated,
+                                    color: AppPalette.card,
                                     surfaceTintColor: Colors.transparent,
                                     onSelected: (action) async {
                                       switch (action) {
@@ -4456,7 +4412,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                                         child: const Text(
                                           'Report user',
                                           style: TextStyle(
-                                            color: FriendifyBrand.pureWhite,
+                                            color: AppPalette.textPrimary,
                                             fontWeight: FontWeight.w800,
                                           ),
                                         ),
@@ -4467,7 +4423,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                                         child: const Text(
                                           'Block user',
                                           style: TextStyle(
-                                            color: FriendifyBrand.pureWhite,
+                                            color: AppPalette.textPrimary,
                                             fontWeight: FontWeight.w800,
                                           ),
                                         ),
@@ -4477,7 +4433,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                                         child: Text(
                                           'Help / Crisis resources',
                                           style: TextStyle(
-                                            color: FriendifyBrand.pureWhite,
+                                            color: AppPalette.textPrimary,
                                             fontWeight: FontWeight.w800,
                                           ),
                                         ),
@@ -4487,7 +4443,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                                 ],
                               ),
                               body: DecoratedBox(
-                                decoration: FriendifyBrand.brandedBackground(),
+                                decoration: const BoxDecoration(
+                                  color: AppPalette.pageBg,
+                                ),
                                 child: Column(
                                   children: [
                                     Expanded(
@@ -4563,8 +4521,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                                                                       fontWeight:
                                                                           FontWeight
                                                                               .w800,
-                                                                      color: FriendifyBrand
-                                                                          .pureWhite,
+                                                                      color: AppPalette
+                                                                          .textPrimary,
                                                                     ),
                                                                   ),
                                                                   const SizedBox(
@@ -4580,8 +4538,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                                                                             .center,
                                                                     style:
                                                                         const TextStyle(
-                                                                      color: FriendifyBrand
-                                                                          .slate,
+                                                                      color: AppPalette
+                                                                          .textSecondary,
                                                                       fontWeight:
                                                                           FontWeight
                                                                               .w600,

@@ -88,6 +88,25 @@ class AppPalette {
           textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
         ),
       ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          elevation: 0,
+          backgroundColor: blue,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: AppPalette.border,
+          disabledForegroundColor: textMuted,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: blue,
+          textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+        ),
+      ),
     );
   }
 }
