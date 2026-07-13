@@ -1,12 +1,17 @@
 import 'dart:async';
 
 import 'package:cloud_functions/cloud_functions.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../core/constants/firestore_paths.dart';
+import '../core/theme/app_palette.dart';
 import '../repositories/call_repository.dart';
 import '../repositories/user_repository.dart';
 import '../services/call_session_manager.dart';
+import '../shared/chat_direction_resolver.dart';
+import '../shared/chat_navigation_guards.dart';
+import '../shared/listener_availability.dart';
 import '../shared/models/app_user_model.dart';
 import 'caller_waiting_screen.dart';
 import 'chat_conversation_screen.dart';
@@ -20,6 +25,11 @@ enum _ListenerSortOption {
   favoritesFirst,
 }
 
+enum _AvailabilityFilter {
+  onlineNow,
+  allListeners,
+}
+
 class MatchAndCallScreen extends StatefulWidget {
   const MatchAndCallScreen({super.key});
 
@@ -31,6 +41,8 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
   final UserRepository _userRepository = UserRepository.instance;
   final CallRepository _callRepository = CallRepository.instance;
   final CallSessionManager _callSession = CallSessionManager.instance;
+  final Map<String, Future<Map<String, dynamic>>> _listenerSessionFutureCache =
+      <String, Future<Map<String, dynamic>>>{};
 
   final TextEditingController _searchController = TextEditingController();
 
@@ -42,7 +54,7 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
   String openingProfileFor = '';
   bool _callStartInFlight = false;
 
-  bool availableOnly = true;
+  _AvailabilityFilter availabilityFilter = _AvailabilityFilter.allListeners;
   bool favoritesOnly = false;
   String selectedTopic = 'All';
   String selectedLanguage = 'All';
@@ -88,12 +100,72 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
     );
   }
 
+  Future<void> _showConversationRepairDialog(AppUserModel listener) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('This conversation needs repair'),
+          content: Text(
+            'We could not confirm the saved speaker/listener direction for your conversation with ${listener.safeDisplayName}. Please go back and repair it before opening this chat.',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Go back'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<bool> _showExistingConversationDialog(AppUserModel listener) async {
+    if (!mounted) return false;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Existing conversation found'),
+          content: Text(
+            'You already have a conversation with ${listener.safeDisplayName} from the other side of this connection. You can open that conversation safely or go back.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Go back'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Open conversation'),
+            ),
+          ],
+        );
+      },
+    );
+    return result == true;
+  }
+
   int _listenerEarnFromVisible(int visibleRate) {
     return _userRepository.listenerPayoutFromVisibleRate(visibleRate);
   }
 
-  bool _isUserBusyFromUserDoc(AppUserModel user) {
-    return user.hasActiveCall || !user.isAvailable;
+  ListenerAvailabilityResult _availabilityForUser(AppUserModel user) {
+    return _userRepository.listenerAvailabilityForUser(user);
+  }
+
+  int _availabilityRankFromUserDoc(AppUserModel user) {
+    switch (_availabilityForUser(user).kind) {
+      case ListenerAvailabilityKind.available:
+        return 0;
+      case ListenerAvailabilityKind.checking:
+        return 1;
+      case ListenerAvailabilityKind.offline:
+        return 2;
+      case ListenerAvailabilityKind.onAnotherCall:
+        return 3;
+    }
   }
 
   bool _isCoolingDownFor(String listenerId) {
@@ -152,35 +224,44 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
   }
 
   String _humanizeFunctionError(Object e) {
-    if (e is FirebaseFunctionsException) {
-      final code = e.code.trim();
-      final msg = (e.message ?? '').trim();
+    return _callRepository.humanizeCallActionError(e);
+  }
 
-      debugPrint(
-        'startCall_v2 FirebaseFunctionsException: '
-        'code=$code message=$msg details=${e.details}',
-      );
-
-      if (msg.isNotEmpty) return msg;
-
-      switch (code) {
-        case 'resource-exhausted':
-          return 'Too many call attempts. Please wait 60 seconds and try again.';
-        case 'failed-precondition':
-          return 'Listener is unavailable, busy, or has not allowed call yet.';
-        case 'unauthenticated':
-          return 'Please login again.';
-        case 'invalid-argument':
-          return 'Invalid call request.';
-        case 'not-found':
-          return 'Listener not found.';
-        default:
-          return 'Call failed: $code';
-      }
+  Future<Map<String, dynamic>> _listenerSessionFuture({
+    required String speakerId,
+    required String listenerId,
+  }) {
+    final safeSpeakerId = speakerId.trim();
+    final safeListenerId = listenerId.trim();
+    if (safeSpeakerId.isEmpty ||
+        safeListenerId.isEmpty ||
+        safeSpeakerId == safeListenerId) {
+      return Future<Map<String, dynamic>>.value(<String, dynamic>{});
     }
 
-    debugPrint('startCall_v2 unknown error: $e');
-    return 'Could not start call. Please try again.';
+    final key = '$safeSpeakerId::$safeListenerId';
+    return _listenerSessionFutureCache.putIfAbsent(
+      key,
+      () => _callRepository.getChatSessionByPair(
+        speakerId: safeSpeakerId,
+        listenerId: safeListenerId,
+      ),
+    );
+  }
+
+  void _invalidateListenerSession({
+    required String speakerId,
+    required String listenerId,
+  }) {
+    final safeSpeakerId = speakerId.trim();
+    final safeListenerId = listenerId.trim();
+    if (safeSpeakerId.isEmpty ||
+        safeListenerId.isEmpty ||
+        safeSpeakerId == safeListenerId) {
+      return;
+    }
+
+    _listenerSessionFutureCache.remove('$safeSpeakerId::$safeListenerId');
   }
 
   String _ratingLabel(num avg) {
@@ -317,7 +398,7 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
     _searchController.clear();
     setState(() {
       search = '';
-      availableOnly = true;
+      availabilityFilter = _AvailabilityFilter.allListeners;
       favoritesOnly = false;
       selectedTopic = 'All';
       selectedLanguage = 'All';
@@ -387,6 +468,68 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
     setState(() => openingChatFor = safeListenerId);
 
     try {
+      final existingSession = await _callRepository.getChatSessionByPair(
+        speakerId: me.uid,
+        listenerId: safeListenerId,
+      );
+
+      if (existingSession['exists'] == true) {
+        final direction = _callRepository.resolveSessionDirectionForUser(
+          session: existingSession,
+          myUid: me.uid,
+          fallbackSpeakerId: me.uid,
+          fallbackListenerId: safeListenerId,
+          mode: ChatDirectionResolutionMode.strictStoredDirection,
+        );
+
+        if (!direction.isResolved) {
+          await _showConversationRepairDialog(listener);
+          return;
+        }
+
+        if (!selectedListenerMatchesStoredDirection(
+          selectedListenerId: safeListenerId,
+          actualListenerId: direction.actualListenerId,
+        )) {
+          final openExisting = await _showExistingConversationDialog(listener);
+          if (openExisting != true) return;
+
+          FocusManager.instance.primaryFocus?.unfocus();
+          if (!mounted) return;
+
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ChatConversationScreen(
+                speakerId: direction.actualSpeakerId,
+                listenerId: direction.actualListenerId,
+                actualListenerId: direction.actualListenerId,
+                iAmListener: direction.iAmListener,
+                initialOtherUser: listener,
+              ),
+            ),
+          );
+          return;
+        }
+
+        FocusManager.instance.primaryFocus?.unfocus();
+        if (!mounted) return;
+
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ChatConversationScreen(
+              speakerId: direction.actualSpeakerId,
+              listenerId: direction.actualListenerId,
+              actualListenerId: direction.actualListenerId,
+              iAmListener: direction.iAmListener,
+              initialOtherUser: listener,
+            ),
+          ),
+        );
+        return;
+      }
+
       final ensuredId =
           await _callRepository.ensureChatSessionWithListener(safeListenerId);
 
@@ -401,6 +544,7 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
       }
 
       if (!mounted) return;
+      FocusManager.instance.primaryFocus?.unfocus();
 
       await Navigator.push(
         context,
@@ -408,14 +552,19 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
           builder: (_) => ChatConversationScreen(
             speakerId: me.uid,
             listenerId: safeListenerId,
+            actualListenerId: safeListenerId,
             iAmListener: false,
             initialOtherUser: listener,
           ),
         ),
       );
-    } catch (_) {
-      _showSnack('Could not open chat right now.');
+    } catch (e) {
+      _showSnack(_callRepository.humanizeChatActionError(e));
     } finally {
+      _invalidateListenerSession(
+        speakerId: me.uid,
+        listenerId: safeListenerId,
+      );
       if (mounted) {
         setState(() => openingChatFor = '');
       } else {
@@ -456,11 +605,6 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
       return;
     }
 
-    if (me.hasActiveCall || me.activeCallId.trim().isNotEmpty) {
-      _showSnack('You already have an active call.');
-      return;
-    }
-
     if (me.blocked.contains(safeListenerId)) {
       _showSnack('You blocked this listener.');
       return;
@@ -473,19 +617,26 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
         return;
       }
 
-      if (_hasBlockingCallState ||
-          meLatest.hasActiveCall ||
-          meLatest.activeCallId.trim().isNotEmpty) {
+      if (_hasBlockingCallState) {
         _showSnack('You already have an active call.');
+        return;
+      }
+
+      if (meLatest.onlyChatMode) {
+        debugPrint(
+          'call.start_local_preflight_blocked reason=self_only_chat_mode',
+        );
+        _showSnack('Turn off Only Chat Mode to start calls.');
         return;
       }
 
       final latestAvailable = _userRepository.usableCreditsFromUser(meLatest);
 
       if (latestAvailable < visibleRate) {
-        _showSnack(
-          'Low credit. You need at least ₹$visibleRate to start this call.',
+        debugPrint(
+          'call.start_local_preflight_blocked reason=insufficient_credits',
         );
+        _showSnack('Add credits before starting a call.');
         return;
       }
 
@@ -495,16 +646,11 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
         return;
       }
 
-      final latestActiveCallId = listenerLatest.activeCallId.trim();
-      final latestAvailableFlag = listenerLatest.isAvailable;
-
-      if (!latestAvailableFlag) {
-        _showSnack('Listener is offline right now.');
-        return;
-      }
-
-      if (latestActiveCallId.isNotEmpty) {
-        _showSnack('Listener is busy right now.');
+      if (listenerLatest.onlyChatMode) {
+        debugPrint(
+          'call.start_local_preflight_blocked reason=peer_only_chat_mode',
+        );
+        _showSnack('This user is in Only Chat Mode.');
         return;
       }
 
@@ -513,9 +659,10 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
       );
 
       if (!canActuallyCall) {
-        _showSnack(
-          'Open chat first. Listener must allow call before you can call now.',
+        debugPrint(
+          'call.start_local_preflight_blocked reason=not_accepted',
         );
+        _showSnack('Request must be accepted before starting a call.');
         return;
       }
 
@@ -529,7 +676,7 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
         _callStartInFlight = true;
       }
 
-      final callRef = await _callRepository.createCallToListener(
+      final callStart = await _callRepository.createCallToListener(
         listenerId: safeListenerId,
       );
 
@@ -539,15 +686,25 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
         _callStartInFlight = false;
       });
 
-      if (callRef == null) {
+      if (callStart == null) {
         _showSnack('Call could not start. Please try again.');
+        return;
+      }
+
+      if (!callStart.canOpenWaitingScreen) {
+        _showSnack('Call setup is incomplete. Please try again.');
         return;
       }
 
       final ok = await Navigator.push<bool>(
         context,
         MaterialPageRoute(
-          builder: (_) => CallerWaitingScreen(callDocRef: callRef),
+          builder: (_) => CallerWaitingScreen(
+            callDocRef: callStart.callRef,
+            initialAgoraToken: callStart.agoraToken,
+            initialAgoraUid: callStart.agoraUid,
+            initialChannelId: callStart.channelId,
+          ),
         ),
       );
 
@@ -631,9 +788,7 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
       if (myCity.isNotEmpty && userCity.isNotEmpty && myCity == userCity) {
         return true;
       }
-      if (myState.isNotEmpty &&
-          userState.isNotEmpty &&
-          myState == userState) {
+      if (myState.isNotEmpty && userState.isNotEmpty && myState == userState) {
         return true;
       }
       return false;
@@ -654,7 +809,10 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
     return listeners.where((user) {
       if (user.uid == myUid) return false;
 
-      if (availableOnly && !user.isAvailable) return false;
+      if (availabilityFilter == _AvailabilityFilter.onlineNow &&
+          !_availabilityForUser(user).canCallNow) {
+        return false;
+      }
 
       final isFavorite = _userRepository.isFavoriteListener(
         me: me,
@@ -672,7 +830,8 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
         return false;
       }
 
-      if (effectiveLanguage != 'All' && !languages.contains(effectiveLanguage)) {
+      if (effectiveLanguage != 'All' &&
+          !languages.contains(effectiveLanguage)) {
         return false;
       }
 
@@ -724,12 +883,14 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
         listenerId: b.uid,
       );
 
-      final aBusy = _isUserBusyFromUserDoc(a);
-      final bBusy = _isUserBusyFromUserDoc(b);
+      final aAvailabilityRank = _availabilityRankFromUserDoc(a);
+      final bAvailabilityRank = _availabilityRankFromUserDoc(b);
 
       switch (sortOption) {
         case _ListenerSortOption.highestRated:
-          if (bBusy != aBusy) return aBusy ? 1 : -1;
+          if (aAvailabilityRank != bAvailabilityRank) {
+            return aAvailabilityRank.compareTo(bAvailabilityRank);
+          }
           final ratingCompare = br.compareTo(ar);
           if (ratingCompare != 0) return ratingCompare;
           final countCompare = bc.compareTo(ac);
@@ -737,7 +898,9 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
           return ap.compareTo(bp);
 
         case _ListenerSortOption.lowestPrice:
-          if (bBusy != aBusy) return aBusy ? 1 : -1;
+          if (aAvailabilityRank != bAvailabilityRank) {
+            return aAvailabilityRank.compareTo(bAvailabilityRank);
+          }
           final priceCompare = ap.compareTo(bp);
           if (priceCompare != 0) return priceCompare;
           final ratingCompare = br.compareTo(ar);
@@ -745,7 +908,9 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
           return bf.compareTo(af);
 
         case _ListenerSortOption.highestFollowers:
-          if (bBusy != aBusy) return aBusy ? 1 : -1;
+          if (aAvailabilityRank != bAvailabilityRank) {
+            return aAvailabilityRank.compareTo(bAvailabilityRank);
+          }
           final followerCompare = bf.compareTo(af);
           if (followerCompare != 0) return followerCompare;
           final ratingCompare = br.compareTo(ar);
@@ -756,7 +921,9 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
           if (bIsFavorite != aIsFavorite) {
             return aIsFavorite ? -1 : 1;
           }
-          if (bBusy != aBusy) return aBusy ? 1 : -1;
+          if (aAvailabilityRank != bAvailabilityRank) {
+            return aAvailabilityRank.compareTo(bAvailabilityRank);
+          }
           final ratingCompare = br.compareTo(ar);
           if (ratingCompare != 0) return ratingCompare;
           final followerCompare = bf.compareTo(af);
@@ -771,8 +938,8 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
             return aIsFavorite ? -1 : 1;
           }
 
-          if (bBusy != aBusy) {
-            return aBusy ? 1 : -1;
+          if (aAvailabilityRank != bAvailabilityRank) {
+            return aAvailabilityRank.compareTo(bAvailabilityRank);
           }
 
           final scoreCompare = bScore.compareTo(aScore);
@@ -792,16 +959,11 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
   List<AppUserModel> _topListeners(List<AppUserModel> users) {
     final out = users
         .where(
-          (u) =>
-              u.isAvailable &&
-              !u.hasActiveCall &&
-              u.ratingAvg >= 4.0 &&
-              u.ratingCount >= 5,
+          (u) => u.isAvailable && u.ratingAvg >= 4.0 && u.ratingCount >= 5,
         )
         .toList(growable: false);
 
-    final sorted = [...out]
-      ..sort((a, b) {
+    final sorted = [...out]..sort((a, b) {
         final ratingCompare = b.ratingAvg.compareTo(a.ratingAvg);
         if (ratingCompare != 0) return ratingCompare;
 
@@ -824,7 +986,9 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
     if (topListeners.isEmpty) return filtered;
 
     final topIds = topListeners.map((e) => e.uid).toSet();
-    return filtered.where((u) => !topIds.contains(u.uid)).toList(growable: false);
+    return filtered
+        .where((u) => !topIds.contains(u.uid))
+        .toList(growable: false);
   }
 
   Widget _sectionTitle(
@@ -843,7 +1007,7 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w900,
-                  color: Color(0xFF111827),
+                  color: AppPalette.textPrimary,
                 ),
               ),
               if (subtitle != null && subtitle.trim().isNotEmpty) ...[
@@ -851,7 +1015,7 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
                 Text(
                   subtitle,
                   style: const TextStyle(
-                    color: Color(0xFF6B7280),
+                    color: AppPalette.textSecondary,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -869,15 +1033,15 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
     required String text,
     Color? color,
   }) {
-    final safeColor = color ?? const Color(0xFF5B5BD6);
+    final safeColor = color ?? AppPalette.blue;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
       decoration: BoxDecoration(
-        color: safeColor.withValues(alpha: 0.08),
+        color: safeColor.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
-          color: safeColor.withValues(alpha: 0.18),
+          color: safeColor.withValues(alpha: 0.26),
         ),
       ),
       child: Row(
@@ -902,15 +1066,18 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: bg ?? const Color(0xFFF1F3F9),
+        color: bg ?? AppPalette.feedBg,
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: AppPalette.border,
+        ),
       ),
       child: Text(
         text,
         style: TextStyle(
           fontSize: 11.5,
           fontWeight: FontWeight.w800,
-          color: fg ?? const Color(0xFF374151),
+          color: fg ?? AppPalette.textSecondary,
         ),
       ),
     );
@@ -928,46 +1095,50 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
 
   Widget _topDiscoveryCard({
     required int total,
+    required int matching,
     required int online,
     required int favorites,
     required int usableCredit,
   }) {
-    return Card(
+    return Container(
+      decoration: AppPalette.cardDecoration(radius: 24),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
               'Find your best listener',
               style: TextStyle(
-                fontSize: 20,
+                fontSize: 22,
                 fontWeight: FontWeight.w900,
-                color: Color(0xFF111827),
+                color: AppPalette.textPrimary,
               ),
             ),
             const SizedBox(height: 6),
             const Text(
               'Search by topic, language, gender, location, rating, or price and connect faster.',
               style: TextStyle(
-                color: Color(0xFF6B7280),
+                color: AppPalette.textSecondary,
                 fontWeight: FontWeight.w600,
                 height: 1.35,
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             Wrap(
-              spacing: 8,
-              runSpacing: 8,
+              spacing: 6,
+              runSpacing: 6,
               children: [
                 _metricChip(
                   icon: Icons.people_alt_rounded,
-                  text: '$total listeners',
+                  text: matching == total
+                      ? '$total listeners'
+                      : '$matching matching',
                 ),
                 _metricChip(
                   icon: Icons.wifi_tethering_rounded,
-                  text: '$online online',
-                  color: const Color(0xFF16A34A),
+                  text: '$online available',
+                  color: AppPalette.online,
                 ),
                 _metricChip(
                   icon: Icons.star_rounded,
@@ -978,13 +1149,22 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
                   icon: Icons.account_balance_wallet_rounded,
                   text: _hasBlockingCallState
                       ? 'Call in progress'
-                      : '₹$usableCredit credit',
-                  color: _hasBlockingCallState
-                      ? const Color(0xFF4F46E5)
-                      : const Color(0xFF7C3AED),
+                      : 'Rs $usableCredit credit',
+                  color: AppPalette.blue,
                 ),
               ],
             ),
+            if (matching != total) ...[
+              const SizedBox(height: 10),
+              Text(
+                '$total total listeners in directory. Current filters hide ${total - matching}.',
+                style: const TextStyle(
+                  color: AppPalette.textSecondary,
+                  fontWeight: FontWeight.w600,
+                  height: 1.3,
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -997,7 +1177,7 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
     required VoidCallback onTap,
   }) {
     return Material(
-      color: selected ? const Color(0xFFEEF1FF) : const Color(0xFFF5F6FA),
+      color: selected ? AppPalette.blueTint : AppPalette.feedBg,
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
         borderRadius: BorderRadius.circular(999),
@@ -1008,17 +1188,15 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
             borderRadius: BorderRadius.circular(999),
             border: Border.all(
               color: selected
-                  ? const Color(0xFF5B5BD6).withValues(alpha: 0.30)
-                  : Colors.black.withValues(alpha: 0.06),
+                  ? AppPalette.blue.withValues(alpha: 0.4)
+                  : AppPalette.border,
             ),
           ),
           child: Text(
             label,
             style: TextStyle(
               fontWeight: FontWeight.w800,
-              color: selected
-                  ? const Color(0xFF4A4FB3)
-                  : const Color(0xFF4B5563),
+              color: selected ? AppPalette.blue : AppPalette.textSecondary,
             ),
           ),
         ),
@@ -1037,9 +1215,28 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
     required String safeSelectedLocation,
     required int myAvailable,
   }) {
-    return Card(
+    final fieldDecoration = InputDecoration(
+      filled: true,
+      fillColor: AppPalette.feedBg,
+      labelStyle: const TextStyle(color: AppPalette.textSecondary),
+      hintStyle: const TextStyle(color: AppPalette.textMuted),
+      prefixIconColor: AppPalette.textMuted,
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(
+          color: AppPalette.border,
+        ),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: AppPalette.blue),
+      ),
+    );
+
+    return Container(
+      decoration: AppPalette.cardDecoration(radius: 20),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
           children: [
             _sectionTitle(
@@ -1051,26 +1248,32 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
                 label: const Text('Reset'),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             TextField(
               controller: _searchController,
-              decoration: const InputDecoration(
+              style: const TextStyle(
+                color: AppPalette.textPrimary,
+                fontWeight: FontWeight.w700,
+              ),
+              decoration: fieldDecoration.copyWith(
                 hintText: 'Search name, bio, topic, language...',
-                prefixIcon: Icon(Icons.search_rounded),
+                prefixIcon: const Icon(Icons.search_rounded),
               ),
               onChanged: _handleSearchChanged,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Wrap(
-              spacing: 10,
-              runSpacing: 10,
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 SizedBox(
                   width: 220,
                   child: DropdownButtonFormField<_ListenerSortOption>(
                     initialValue: sortOption,
                     isExpanded: true,
-                    decoration: const InputDecoration(
+                    dropdownColor: AppPalette.card,
+                    style: const TextStyle(color: AppPalette.textPrimary),
+                    decoration: fieldDecoration.copyWith(
                       labelText: 'Sort by',
                     ),
                     items: _ListenerSortOption.values
@@ -1092,8 +1295,18 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
                 ),
                 _toggleFilterChip(
                   label: 'Available now',
-                  selected: availableOnly,
-                  onTap: () => setState(() => availableOnly = !availableOnly),
+                  selected: availabilityFilter == _AvailabilityFilter.onlineNow,
+                  onTap: () => setState(
+                    () => availabilityFilter = _AvailabilityFilter.onlineNow,
+                  ),
+                ),
+                _toggleFilterChip(
+                  label: 'All listeners',
+                  selected:
+                      availabilityFilter == _AvailabilityFilter.allListeners,
+                  onTap: () => setState(
+                    () => availabilityFilter = _AvailabilityFilter.allListeners,
+                  ),
                 ),
                 _toggleFilterChip(
                   label: 'Favorites only',
@@ -1104,10 +1317,8 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
                   icon: Icons.account_balance_wallet_outlined,
                   text: _hasBlockingCallState
                       ? 'Call in progress'
-                      : '₹$myAvailable usable',
-                  color: _hasBlockingCallState
-                      ? const Color(0xFF4F46E5)
-                      : const Color(0xFF374151),
+                      : 'Rs $myAvailable usable',
+                  color: AppPalette.blue,
                 ),
               ],
             ),
@@ -1118,7 +1329,9 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
                   child: DropdownButtonFormField<String>(
                     initialValue: safeSelectedTopic,
                     isExpanded: true,
-                    decoration: const InputDecoration(
+                    dropdownColor: AppPalette.card,
+                    style: const TextStyle(color: AppPalette.textPrimary),
+                    decoration: fieldDecoration.copyWith(
                       labelText: 'Topic',
                     ),
                     items: topicOptions
@@ -1143,7 +1356,9 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
                   child: DropdownButtonFormField<String>(
                     initialValue: safeSelectedLanguage,
                     isExpanded: true,
-                    decoration: const InputDecoration(
+                    dropdownColor: AppPalette.card,
+                    style: const TextStyle(color: AppPalette.textPrimary),
+                    decoration: fieldDecoration.copyWith(
                       labelText: 'Language',
                     ),
                     items: languageOptions
@@ -1172,7 +1387,9 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
                   child: DropdownButtonFormField<String>(
                     initialValue: safeSelectedGender,
                     isExpanded: true,
-                    decoration: const InputDecoration(
+                    dropdownColor: AppPalette.card,
+                    style: const TextStyle(color: AppPalette.textPrimary),
+                    decoration: fieldDecoration.copyWith(
                       labelText: 'Gender',
                     ),
                     items: genderOptions
@@ -1197,7 +1414,9 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
                   child: DropdownButtonFormField<String>(
                     initialValue: safeSelectedLocation,
                     isExpanded: true,
-                    decoration: const InputDecoration(
+                    dropdownColor: AppPalette.card,
+                    style: const TextStyle(color: AppPalette.textPrimary),
+                    decoration: fieldDecoration.copyWith(
                       labelText: 'Location',
                     ),
                     items: locationOptions
@@ -1255,30 +1474,25 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
                 me: me,
                 listenerId: user.uid,
               );
-              final canCallButton =
-                  !_busyWithAnyAction &&
-                  !_hasBlockingCallState &&
-                  !_isCoolingDownFor(user.uid) &&
-                  !_isUserBusyFromUserDoc(user);
+              final availability = _availabilityForUser(user);
+              final isOnAnotherCall =
+                  availability.kind == ListenerAvailabilityKind.onAnotherCall;
+              final isChecking =
+                  availability.kind == ListenerAvailabilityKind.checking;
 
               return SizedBox(
                 width: 220,
                 child: Material(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(24),
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(20),
                   child: InkWell(
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: BorderRadius.circular(20),
                     onTap: _busyWithAnyAction
                         ? null
                         : () => _openListenerProfile(user),
                     child: Ink(
                       padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(
-                          color: Colors.black.withValues(alpha: 0.05),
-                        ),
-                      ),
+                      decoration: AppPalette.cardDecoration(radius: 20),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -1286,12 +1500,12 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
                             children: [
                               CircleAvatar(
                                 radius: 22,
-                                backgroundColor: const Color(0xFFE6E8FF),
+                                backgroundColor: AppPalette.blueTint,
                                 child: Text(
                                   name.isNotEmpty ? name[0].toUpperCase() : 'L',
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w900,
-                                    color: Color(0xFF4A4FB3),
+                                    color: AppPalette.blue,
                                   ),
                                 ),
                               ),
@@ -1312,16 +1526,16 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w900,
-                              color: Color(0xFF111827),
+                              color: AppPalette.textPrimary,
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            '⭐ ${_ratingLabel(user.ratingAvg)} • ${user.followersCount} followers',
+                            '${_ratingLabel(user.ratingAvg)} rating | ${user.followersCount} followers',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              color: Color(0xFF6B7280),
+                              color: AppPalette.textSecondary,
                               fontWeight: FontWeight.w700,
                               fontSize: 12.5,
                             ),
@@ -1332,55 +1546,121 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
                             runSpacing: 6,
                             children: [
                               _tinyTag(
-                                '₹${user.listenerRate}/min',
-                                bg: const Color(0xFFEEF2FF),
-                                fg: const Color(0xFF4A4FB3),
+                                'Rs ${user.listenerRate}/min',
+                                bg: AppPalette.blueTint,
+                                fg: AppPalette.blue,
                               ),
                               _tinyTag(
                                 _hasBlockingCallState
                                     ? 'Your call active'
-                                    : user.isAvailable && !user.hasActiveCall
-                                        ? 'Available'
-                                        : 'Busy',
+                                    : availability.label,
                                 bg: _hasBlockingCallState
                                     ? const Color(0xFFEEF2FF)
-                                    : user.isAvailable && !user.hasActiveCall
-                                        ? const Color(0xFFECFDF3)
-                                        : const Color(0xFFFEECEC),
+                                    : isOnAnotherCall
+                                        ? const Color(0xFFFEECEC)
+                                        : availability.kind ==
+                                                ListenerAvailabilityKind
+                                                    .available
+                                            ? const Color(0xFFECFDF3)
+                                            : isChecking
+                                                ? const Color(0xFFFFFBEB)
+                                                : const Color(0xFFF3F4F6),
                                 fg: _hasBlockingCallState
                                     ? const Color(0xFF4F46E5)
-                                    : user.isAvailable && !user.hasActiveCall
-                                        ? const Color(0xFF15803D)
-                                        : const Color(0xFFDC2626),
+                                    : isOnAnotherCall
+                                        ? const Color(0xFFDC2626)
+                                        : availability.kind ==
+                                                ListenerAvailabilityKind
+                                                    .available
+                                            ? const Color(0xFF15803D)
+                                            : isChecking
+                                                ? const Color(0xFFB45309)
+                                                : const Color(0xFF6B7280),
                               ),
                             ],
                           ),
                           const Spacer(),
                           SizedBox(
                             width: double.infinity,
-                            child: ValueListenableBuilder<int>(
-                              valueListenable: _callCooldownRemaining,
-                              builder: (_, __, ___) {
-                                return FilledButton(
-                                  onPressed: canCallButton
-                                      ? () => _startCall(
-                                            me: me,
-                                            listenerId: user.uid,
-                                            visibleRate: user.listenerRate,
-                                          )
-                                      : null,
-                                  child: Text(
-                                    callingFor == user.uid
-                                        ? 'Calling...'
-                                        : _hasBlockingCallState
-                                            ? 'Call Active'
-                                            : _isCoolingDownFor(user.uid)
-                                                ? 'Wait ${_callCooldownRemaining.value}s'
-                                                : user.isAvailable &&
-                                                        !user.hasActiveCall
-                                                    ? 'Call now'
-                                                    : 'Busy',
-                                  ),
+                            child: FutureBuilder<Map<String, dynamic>>(
+                              future: _listenerSessionFuture(
+                                speakerId: me.uid,
+                                listenerId: user.uid,
+                              ),
+                              builder: (_, sessionSnap) {
+                                return ValueListenableBuilder<int>(
+                                  valueListenable: _callCooldownRemaining,
+                                  builder: (_, __, ___) {
+                                    final session = sessionSnap.data ??
+                                        const <String, dynamic>{};
+                                    final checkingSession =
+                                        sessionSnap.connectionState !=
+                                                ConnectionState.done &&
+                                            sessionSnap.data == null;
+                                    final sessionExists =
+                                        session['exists'] == true;
+                                    final sessionBlocked = session[
+                                                FirestorePaths
+                                                    .fieldSpeakerBlocked] ==
+                                            true ||
+                                        session[FirestorePaths
+                                                .fieldListenerBlocked] ==
+                                            true;
+                                    final sessionCallAllowed = sessionExists &&
+                                        !sessionBlocked &&
+                                        _callRepository
+                                            .sessionAllowsCallForDirection(
+                                          session: session,
+                                          speakerId: me.uid,
+                                          listenerId: user.uid,
+                                        );
+                                    final canPressPrimary =
+                                        !_busyWithAnyAction &&
+                                            !_hasBlockingCallState &&
+                                            !_isCoolingDownFor(user.uid) &&
+                                            !checkingSession &&
+                                            !sessionBlocked &&
+                                            (!sessionCallAllowed ||
+                                                availability.canCallNow);
+
+                                    final primaryLabel = openingChatFor ==
+                                                user.uid &&
+                                            !sessionCallAllowed
+                                        ? 'Opening...'
+                                        : callingFor == user.uid &&
+                                                sessionCallAllowed
+                                            ? 'Calling...'
+                                            : _hasBlockingCallState
+                                                ? 'Call Active'
+                                                : _isCoolingDownFor(user.uid)
+                                                    ? 'Wait ${_callCooldownRemaining.value}s'
+                                                    : checkingSession
+                                                        ? 'Checking...'
+                                                        : sessionCallAllowed
+                                                            ? (availability
+                                                                    .canCallNow
+                                                                ? 'Call now'
+                                                                : availability
+                                                                    .label)
+                                                            : 'Open chat';
+
+                                    return FilledButton(
+                                      onPressed: !canPressPrimary
+                                          ? null
+                                          : sessionCallAllowed
+                                              ? () => _startCall(
+                                                    me: me,
+                                                    listenerId: user.uid,
+                                                    visibleRate:
+                                                        user.listenerRate,
+                                                  )
+                                              : () => _openChat(
+                                                    me: me,
+                                                    listener: user,
+                                                  ),
+                                      child: Text(primaryLabel),
+                                    );
+                                  },
                                 );
                               },
                             ),
@@ -1398,7 +1678,10 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
     );
   }
 
-  Widget _emptyState() {
+  Widget _emptyState({
+    required int totalListeners,
+    required int onlineListeners,
+  }) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -1410,27 +1693,36 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
                   ? Icons.star_border_rounded
                   : Icons.search_off_rounded,
               size: 52,
-              color: Colors.black38,
+              color: AppPalette.blue,
             ),
             const SizedBox(height: 12),
             Text(
               favoritesOnly
                   ? 'No favorite listeners match your filters.'
-                  : 'No listeners match your filters.',
+                  : availabilityFilter == _AvailabilityFilter.onlineNow &&
+                          onlineListeners == 0 &&
+                          totalListeners > 0
+                      ? 'No listeners are available right now.'
+                      : 'No listeners match your filters.',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w900,
+                color: AppPalette.textPrimary,
               ),
             ),
             const SizedBox(height: 8),
             Text(
               favoritesOnly
                   ? 'Try turning off Favorites only, or change topic, language, gender, location, or search.'
-                  : 'Try changing topic, language, gender, location, availability, or search text.',
+                  : availabilityFilter == _AvailabilityFilter.onlineNow &&
+                          onlineListeners == 0 &&
+                          totalListeners > 0
+                      ? 'Your directory has listeners, but none are currently available. Turn off Available now to browse everyone.'
+                      : 'Try changing topic, language, gender, location, availability, or search text.',
               textAlign: TextAlign.center,
               style: const TextStyle(
-                color: Color(0xFF6B7280),
+                color: AppPalette.textSecondary,
                 fontWeight: FontWeight.w600,
                 height: 1.35,
               ),
@@ -1463,7 +1755,11 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
     final visibleRate = user.listenerRate;
     final listenerEarn = _listenerEarnFromVisible(visibleRate);
 
-    final isBusy = _isUserBusyFromUserDoc(user);
+    final availability = _availabilityForUser(user);
+    final isOnAnotherCall =
+        availability.kind == ListenerAvailabilityKind.onAnotherCall;
+    final isChecking = availability.kind == ListenerAvailabilityKind.checking;
+    const isCallUnavailable = false;
 
     final isFollowing = followingSet.contains(id);
     final isFavorite = _userRepository.isFavoriteListener(
@@ -1489,53 +1785,53 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
     final topics = _safeStringList(user.topics);
     final languages = _safeStringList(user.languages);
 
-    final statusText = _hasBlockingCallState
-        ? 'Your call active'
-        : isBusy
-            ? 'Busy'
-            : 'Available';
+    final statusText =
+        _hasBlockingCallState ? 'Call in progress' : availability.label;
     final statusBg = _hasBlockingCallState
         ? const Color(0xFFEEF2FF)
-        : isBusy
+        : isOnAnotherCall
             ? const Color(0xFFFEECEC)
-            : const Color(0xFFECFDF3);
+            : availability.kind == ListenerAvailabilityKind.available
+                ? const Color(0xFFECFDF3)
+                : isChecking
+                    ? const Color(0xFFFFFBEB)
+                    : const Color(0xFFF3F4F6);
     final statusFg = _hasBlockingCallState
         ? const Color(0xFF4F46E5)
-        : isBusy
+        : isOnAnotherCall
             ? const Color(0xFFDC2626)
-            : const Color(0xFF16A34A);
+            : availability.kind == ListenerAvailabilityKind.available
+                ? const Color(0xFF16A34A)
+                : isChecking
+                    ? const Color(0xFFB45309)
+                    : const Color(0xFF6B7280);
 
     return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(24),
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(20),
       child: InkWell(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(20),
         onTap: canInteract ? () => _openListenerProfile(user) : null,
         child: Ink(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: Colors.black.withValues(alpha: 0.05),
-            ),
-          ),
+          padding: const EdgeInsets.all(12),
+          decoration: AppPalette.cardDecoration(radius: 20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
                   CircleAvatar(
-                    radius: 24,
-                    backgroundColor: const Color(0xFFE6E8FF),
+                    radius: 20,
+                    backgroundColor: AppPalette.blueTint,
                     child: Text(
                       name.isNotEmpty ? name[0].toUpperCase() : 'L',
                       style: const TextStyle(
                         fontWeight: FontWeight.w900,
-                        color: Color(0xFF4A4FB3),
+                        color: AppPalette.blue,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1548,9 +1844,9 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                  fontSize: 16,
+                                  fontSize: 15,
                                   fontWeight: FontWeight.w900,
-                                  color: Color(0xFF111827),
+                                  color: AppPalette.textPrimary,
                                 ),
                               ),
                             ),
@@ -1597,7 +1893,7 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
@@ -1605,82 +1901,54 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
                   _metricChip(
                     icon: Icons.currency_rupee_rounded,
                     text: '$visibleRate/min',
-                    color: const Color(0xFF5B5BD6),
+                    color: AppPalette.blue,
                   ),
                   _metricChip(
                     icon: Icons.star_rounded,
                     text: hasRating
                         ? '${_ratingLabel(ratingAvg)} ($ratingCount)'
-                        : 'No ratings',
+                        : 'Not rated yet',
                     color: const Color(0xFFF59E0B),
                   ),
                 ],
               ),
               if (bio.isNotEmpty) ...[
-                const SizedBox(height: 10),
+                const SizedBox(height: 6),
                 Text(
                   bio,
                   style: const TextStyle(
-                    color: Color(0xFF4B5563),
+                    color: AppPalette.textSecondary,
                     fontWeight: FontWeight.w600,
                     height: 1.35,
                     fontSize: 13,
                   ),
-                  maxLines: 2,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
               if (topics.isNotEmpty) ...[
-                const SizedBox(height: 10),
+                const SizedBox(height: 6),
                 _smallChips(topics),
               ],
               if (languages.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 _smallChips(languages),
               ],
-              const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8F9FD),
-                  borderRadius: BorderRadius.circular(18),
+              const SizedBox(height: 8),
+              Text(
+                _hasBlockingCallState
+                    ? 'Current call in progress'
+                    : 'Rs $visibleRate/min | You have Rs $myAvailable | Listener earns Rs $listenerEarn',
+                style: const TextStyle(
+                  color: AppPalette.textSecondary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                  height: 1.25,
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'You pay ₹$visibleRate / full minute',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF111827),
-                        fontSize: 13,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      'Listener earns ₹$listenerEarn / full minute',
-                      style: const TextStyle(
-                        color: Color(0xFF6B7280),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12.5,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      _hasBlockingCallState
-                          ? 'Finish current call to start another'
-                          : 'Your usable credit: ₹$myAvailable',
-                      style: const TextStyle(
-                        color: Color(0xFF6B7280),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12.5,
-                      ),
-                    ),
-                  ],
-                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               ValueListenableBuilder<int>(
                 valueListenable: _callCooldownRemaining,
                 builder: (_, __, ___) {
@@ -1688,29 +1956,75 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
                     children: [
                       Expanded(
                         flex: 2,
-                        child: FilledButton.icon(
-                          onPressed: !_busyWithAnyAction &&
-                                  !_hasBlockingCallState &&
-                                  !isBusy &&
-                                  !_isCoolingDownFor(id)
-                              ? () => _startCall(
-                                    me: me,
-                                    listenerId: id,
-                                    visibleRate: visibleRate,
-                                  )
-                              : null,
-                          icon: const Icon(Icons.call_rounded, size: 18),
-                          label: Text(
-                            callingFor == id
-                                ? 'Calling...'
-                                : _hasBlockingCallState
-                                    ? 'Call Active'
-                                    : _isCoolingDownFor(id)
-                                        ? 'Wait ${_callCooldownRemaining.value}s'
-                                        : isBusy
-                                            ? 'Busy'
-                                            : 'Call now',
+                        child: FutureBuilder<Map<String, dynamic>>(
+                          future: _listenerSessionFuture(
+                            speakerId: me.uid,
+                            listenerId: id,
                           ),
+                          builder: (_, sessionSnap) {
+                            final session =
+                                sessionSnap.data ?? const <String, dynamic>{};
+                            final checkingSession =
+                                sessionSnap.connectionState !=
+                                        ConnectionState.done &&
+                                    sessionSnap.data == null;
+                            final sessionExists = session['exists'] == true;
+                            final sessionBlocked = session[
+                                        FirestorePaths.fieldSpeakerBlocked] ==
+                                    true ||
+                                session[FirestorePaths.fieldListenerBlocked] ==
+                                    true;
+                            final sessionCallAllowed = sessionExists &&
+                                !sessionBlocked &&
+                                _callRepository.sessionAllowsCallForDirection(
+                                  session: session,
+                                  speakerId: me.uid,
+                                  listenerId: id,
+                                );
+
+                            final canPressPrimary = !_busyWithAnyAction &&
+                                !_hasBlockingCallState &&
+                                !_isCoolingDownFor(id) &&
+                                !isCallUnavailable &&
+                                !checkingSession &&
+                                !sessionBlocked &&
+                                (!sessionCallAllowed ||
+                                    availability.canCallNow);
+
+                            final primaryLabel = chatWorking &&
+                                    !sessionCallAllowed
+                                ? 'Opening...'
+                                : callingFor == id && sessionCallAllowed
+                                    ? 'Calling...'
+                                    : _hasBlockingCallState
+                                        ? 'Call Active'
+                                        : _isCoolingDownFor(id)
+                                            ? 'Wait ${_callCooldownRemaining.value}s'
+                                            : checkingSession
+                                                ? 'Checking...'
+                                                : sessionCallAllowed
+                                                    ? (availability.canCallNow
+                                                        ? 'Call now'
+                                                        : availability.label)
+                                                    : 'Open chat';
+
+                            return FilledButton.icon(
+                              onPressed: !canPressPrimary
+                                  ? null
+                                  : sessionCallAllowed
+                                      ? () => _startCall(
+                                            me: me,
+                                            listenerId: id,
+                                            visibleRate: visibleRate,
+                                          )
+                                      : () => _openChat(
+                                            me: me,
+                                            listener: user,
+                                          ),
+                              icon: const Icon(Icons.call_rounded, size: 18),
+                              label: Text(primaryLabel),
+                            );
+                          },
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -1729,98 +2043,72 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
                 },
               ),
               const SizedBox(height: 8),
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
                 children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: (!canInteract || chatWorking)
-                          ? null
-                          : () => _openChat(
-                                me: me,
-                                listener: user,
-                              ),
-                      icon: chatWorking
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(
-                              Icons.chat_bubble_outline_rounded,
-                              size: 18,
+                  OutlinedButton.icon(
+                    onPressed: (!canInteract || chatWorking)
+                        ? null
+                        : () => _openChat(
+                              me: me,
+                              listener: user,
                             ),
-                      label: Text(chatWorking ? 'Opening...' : 'Chat'),
+                    icon: chatWorking
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(
+                            Icons.chat_bubble_outline_rounded,
+                            size: 16,
+                          ),
+                    label: Text(chatWorking ? 'Opening...' : 'Chat'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: (!canInteract || followWorking)
+                        ? null
+                        : () => _toggleFollow(
+                              listenerId: id,
+                              isFollowing: isFollowing,
+                            ),
+                    icon: Icon(
+                      isFollowing
+                          ? Icons.person_remove_alt_1
+                          : Icons.person_add_alt_1,
+                      size: 16,
+                    ),
+                    label: Text(
+                      followWorking
+                          ? 'Please wait...'
+                          : (isFollowing ? 'Unfollow' : 'Follow'),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: (!canInteract || followWorking)
-                          ? null
-                          : () => _toggleFollow(
-                                listenerId: id,
-                                isFollowing: isFollowing,
-                              ),
-                      icon: Icon(
-                        isFollowing
-                            ? Icons.person_remove_alt_1
-                            : Icons.person_add_alt_1,
-                        size: 18,
-                      ),
-                      label: Text(
-                        followWorking
-                            ? 'Please wait...'
-                            : (isFollowing ? 'Unfollow' : 'Follow'),
-                      ),
-                    ),
+                  OutlinedButton.icon(
+                    onPressed: (!canInteract || favoriteWorking)
+                        ? null
+                        : () => _toggleFavorite(
+                              listenerId: id,
+                              isFavorite: isFavorite,
+                            ),
+                    icon: favoriteWorking
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            isFavorite
+                                ? Icons.star_rounded
+                                : Icons.star_border_rounded,
+                            size: 16,
+                            color: isFavorite ? const Color(0xFFF59E0B) : null,
+                          ),
+                    label: Text(isFavorite ? 'Unfavorite' : 'Favorite'),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: (!canInteract || favoriteWorking)
-                          ? null
-                          : () => _toggleFavorite(
-                                listenerId: id,
-                                isFavorite: isFavorite,
-                              ),
-                      icon: favoriteWorking
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                              ),
-                            )
-                          : Icon(
-                              isFavorite
-                                  ? Icons.star_rounded
-                                  : Icons.star_border_rounded,
-                              color: isFavorite
-                                  ? const Color(0xFFF59E0B)
-                                  : null,
-                            ),
-                      label: Text(
-                        isFavorite ? 'Unfavorite' : 'Favorite',
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              if (kDebugMode) ...[
-                const SizedBox(height: 8),
-                Text(
-                  'Debug → isBusy=$isBusy, isFavorite=$isFavorite, isAvailable=${user.isAvailable}, activeCallId=${user.activeCallId}, cooldown=${_isCoolingDownFor(user.uid) ? _callCooldownRemaining.value : 0}, localCallState=${_callSession.state.name}',
-                  style: const TextStyle(
-                    color: Colors.black45,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
             ],
           ),
         ),
@@ -1833,205 +2121,241 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
     return AnimatedBuilder(
       animation: _callSession,
       builder: (_, __) {
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('Find a Listener'),
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: const SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: Brightness.dark,
+            statusBarBrightness: Brightness.light,
           ),
-          body: StreamBuilder<AppUserModel?>(
-            stream: _userRepository.watchMe(),
-            builder: (_, meSnap) {
-              if (!meSnap.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
+          child: Scaffold(
+            backgroundColor: AppPalette.pageBg,
+            appBar: AppBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              foregroundColor: AppPalette.textPrimary,
+              title: const Text('Search'),
+            ),
+            body: Theme(
+              data: AppPalette.lightSheetTheme(context),
+              child: DecoratedBox(
+                decoration: const BoxDecoration(color: AppPalette.pageBg),
+                child: StreamBuilder<AppUserModel?>(
+                  stream: _userRepository.watchMe(),
+                  builder: (_, meSnap) {
+                    if (!meSnap.hasData) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
 
-              final me = meSnap.data!;
-              final followingSet = me.following.map((e) => e.trim()).toSet();
-              final myAvailable = me.usableCredits;
+                    final me = meSnap.data!;
+                    final followingSet =
+                        me.following.map((e) => e.trim()).toSet();
+                    final myAvailable = me.usableCredits;
 
-              return StreamBuilder<List<AppUserModel>>(
-                stream: _userRepository.watchAvailableListeners(limit: 200),
-                builder: (_, snap) {
-                  if (!snap.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
+                    return StreamBuilder<List<AppUserModel>>(
+                      stream:
+                          _userRepository.watchAvailableListeners(limit: 200),
+                      builder: (_, snap) {
+                        if (!snap.hasData) {
+                          return const Center(
+                              child: CircularProgressIndicator());
+                        }
 
-                  final allListeners = snap.data!;
-                  final listenerOnly = List<AppUserModel>.from(
-                    allListeners,
-                    growable: false,
-                  );
-                  
-                  final topicOptions = [
-                    'All',
-                    ..._collectAllTopics(listenerOnly),
-                  ];
-                  final languageOptions = [
-                    'All',
-                    ..._collectAllLanguages(listenerOnly),
-                  ];
-                  final genderOptions = [
-                    'All',
-                    ..._collectAllGenders(listenerOnly),
-                  ];
-                  final locationOptions = [
-                    'All',
-                    ..._collectAllLocations(listenerOnly),
-                  ];
+                        final allListeners = snap.data!;
+                        final listenerOnly = List<AppUserModel>.from(
+                          allListeners,
+                          growable: false,
+                        );
 
-                  final safeSelectedTopic = topicOptions.contains(selectedTopic)
-                      ? selectedTopic
-                      : 'All';
-                  final safeSelectedLanguage =
-                      languageOptions.contains(selectedLanguage)
-                          ? selectedLanguage
-                          : 'All';
-                  final safeSelectedGender = genderOptions.contains(selectedGender)
-                      ? selectedGender
-                      : 'All';
-                  final safeSelectedLocation =
-                      locationOptions.contains(selectedLocation)
-                          ? selectedLocation
-                          : 'All';
+                        final topicOptions = [
+                          'All',
+                          ..._collectAllTopics(listenerOnly),
+                        ];
+                        final languageOptions = [
+                          'All',
+                          ..._collectAllLanguages(listenerOnly),
+                        ];
+                        final genderOptions = [
+                          'All',
+                          ..._collectAllGenders(listenerOnly),
+                        ];
+                        final locationOptions = [
+                          'All',
+                          ..._collectAllLocations(listenerOnly),
+                        ];
 
-                  final filtered = _applyFilters(
-                    listeners: listenerOnly,
-                    myUid: me.uid,
-                    me: me,
-                    effectiveTopic: safeSelectedTopic,
-                    effectiveLanguage: safeSelectedLanguage,
-                    effectiveGender: safeSelectedGender,
-                    effectiveLocation: safeSelectedLocation,
-                  ).toList();
+                        final safeSelectedTopic =
+                            topicOptions.contains(selectedTopic)
+                                ? selectedTopic
+                                : 'All';
+                        final safeSelectedLanguage =
+                            languageOptions.contains(selectedLanguage)
+                                ? selectedLanguage
+                                : 'All';
+                        final safeSelectedGender =
+                            genderOptions.contains(selectedGender)
+                                ? selectedGender
+                                : 'All';
+                        final safeSelectedLocation =
+                            locationOptions.contains(selectedLocation)
+                                ? selectedLocation
+                                : 'All';
 
-                  _sortListeners(
-                    listeners: filtered,
-                    me: me,
-                  );
-
-                  final topListeners = _topListeners(filtered);
-                  final regularListeners = _regularListenersWithoutTop(
-                    filtered: filtered,
-                    topListeners: topListeners,
-                  );
-
-                  final totalListeners = listenerOnly.length;
-                  final onlineListeners = listenerOnly
-                      .where((e) => e.isAvailable && !e.hasActiveCall)
-                      .length;
-                  final favoriteCount = _safeStringList(me.favoriteListeners).length;
-
-                  return ListView(
-                    keyboardDismissBehavior:
-                        ScrollViewKeyboardDismissBehavior.onDrag,
-                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 20),
-                    children: [
-                      _topDiscoveryCard(
-                        total: totalListeners,
-                        online: onlineListeners,
-                        favorites: favoriteCount,
-                        usableCredit: myAvailable,
-                      ),
-                      const SizedBox(height: 12),
-                      _filterCard(
-                        topicOptions: topicOptions,
-                        languageOptions: languageOptions,
-                        genderOptions: genderOptions,
-                        locationOptions: locationOptions,
-                        safeSelectedTopic: safeSelectedTopic,
-                        safeSelectedLanguage: safeSelectedLanguage,
-                        safeSelectedGender: safeSelectedGender,
-                        safeSelectedLocation: safeSelectedLocation,
-                        myAvailable: myAvailable,
-                      ),
-                      const SizedBox(height: 16),
-                      if (_hasBlockingCallState) ...[
-                        Card(
-                          color: const Color(0xFFEEF2FF),
-                          child: const Padding(
-                            padding: EdgeInsets.all(14),
-                            child: Text(
-                              'You already have a call flow in progress. Starting another call is temporarily disabled.',
-                              style: TextStyle(
-                                color: Color(0xFF4F46E5),
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                      ],
-                      if (topListeners.isNotEmpty) ...[
-                        _topListenersSection(
-                          topListeners: topListeners,
+                        final filtered = _applyFilters(
+                          listeners: listenerOnly,
+                          myUid: me.uid,
                           me: me,
-                          myAvailable: myAvailable,
-                        ),
-                        const SizedBox(height: 18),
-                      ],
-                      _sectionTitle(
-                        topListeners.isNotEmpty ? 'More listeners' : 'Listeners',
-                        subtitle:
-                            '${filtered.length} result${filtered.length == 1 ? '' : 's'}',
-                      ),
-                      const SizedBox(height: 10),
-                      if (filtered.isEmpty)
-                        SizedBox(
-                          height: 280,
-                          child: _emptyState(),
-                        )
-                      else if (regularListeners.isEmpty && topListeners.isNotEmpty)
-                        Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(18),
-                            child: Column(
-                              children: const [
-                                Icon(
-                                  Icons.emoji_events_outlined,
-                                  size: 42,
-                                  color: Color(0xFFF59E0B),
-                                ),
-                                SizedBox(height: 10),
-                                Text(
-                                  'Only top listeners match your current filters.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                                SizedBox(height: 6),
-                                Text(
-                                  'Try changing filters to see more listeners.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: Color(0xFF6B7280),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
+                          effectiveTopic: safeSelectedTopic,
+                          effectiveLanguage: safeSelectedLanguage,
+                          effectiveGender: safeSelectedGender,
+                          effectiveLocation: safeSelectedLocation,
+                        ).toList();
+
+                        _sortListeners(
+                          listeners: filtered,
+                          me: me,
+                        );
+
+                        final topListeners = _topListeners(filtered);
+                        final regularListeners = _regularListenersWithoutTop(
+                          filtered: filtered,
+                          topListeners: topListeners,
+                        );
+
+                        final totalListeners = listenerOnly.length;
+                        final onlineListeners = listenerOnly
+                            .where((e) => _availabilityForUser(e).canCallNow)
+                            .length;
+                        final favoriteCount =
+                            _safeStringList(me.favoriteListeners).length;
+
+                        return ListView(
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          padding: const EdgeInsets.fromLTRB(14, 10, 14, 20),
+                          children: [
+                            _topDiscoveryCard(
+                              total: totalListeners,
+                              matching: filtered.length,
+                              online: onlineListeners,
+                              favorites: favoriteCount,
+                              usableCredit: myAvailable,
                             ),
-                          ),
-                        )
-                      else
-                        ...List.generate(regularListeners.length, (i) {
-                          final user = regularListeners[i];
-                          return Padding(
-                            padding: EdgeInsets.only(
-                              bottom: i == regularListeners.length - 1 ? 0 : 10,
-                            ),
-                            child: _listenerCard(
-                              user: user,
-                              me: me,
-                              followingSet: followingSet,
+                            const SizedBox(height: 12),
+                            _filterCard(
+                              topicOptions: topicOptions,
+                              languageOptions: languageOptions,
+                              genderOptions: genderOptions,
+                              locationOptions: locationOptions,
+                              safeSelectedTopic: safeSelectedTopic,
+                              safeSelectedLanguage: safeSelectedLanguage,
+                              safeSelectedGender: safeSelectedGender,
+                              safeSelectedLocation: safeSelectedLocation,
                               myAvailable: myAvailable,
                             ),
-                          );
-                        }),
-                    ],
-                  );
-                },
-              );
-            },
+                            const SizedBox(height: 16),
+                            if (_hasBlockingCallState) ...[
+                              Container(
+                                decoration:
+                                    AppPalette.cardDecoration(radius: 18),
+                                child: const Padding(
+                                  padding: EdgeInsets.all(14),
+                                  child: Text(
+                                    'Finish your current call before starting another one.',
+                                    style: TextStyle(
+                                      color: AppPalette.blue,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                            ],
+                            if (topListeners.isNotEmpty) ...[
+                              _topListenersSection(
+                                topListeners: topListeners,
+                                me: me,
+                                myAvailable: myAvailable,
+                              ),
+                              const SizedBox(height: 18),
+                            ],
+                            _sectionTitle(
+                              topListeners.isNotEmpty
+                                  ? 'More listeners'
+                                  : 'Listeners',
+                              subtitle:
+                                  '${filtered.length} result${filtered.length == 1 ? '' : 's'}',
+                            ),
+                            const SizedBox(height: 10),
+                            if (filtered.isEmpty)
+                              SizedBox(
+                                height: 280,
+                                child: _emptyState(
+                                  totalListeners: totalListeners,
+                                  onlineListeners: onlineListeners,
+                                ),
+                              )
+                            else if (regularListeners.isEmpty &&
+                                topListeners.isNotEmpty)
+                              Container(
+                                decoration:
+                                    AppPalette.cardDecoration(radius: 18),
+                                child: const Padding(
+                                  padding: EdgeInsets.all(18),
+                                  child: Column(
+                                    children: [
+                                      Icon(
+                                        Icons.emoji_events_outlined,
+                                        size: 42,
+                                        color: Color(0xFFF59E0B),
+                                      ),
+                                      SizedBox(height: 10),
+                                      Text(
+                                        'Only top listeners match these filters.',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w900,
+                                          fontSize: 16,
+                                          color: AppPalette.textPrimary,
+                                        ),
+                                      ),
+                                      SizedBox(height: 6),
+                                      Text(
+                                        'Try changing your filters to see more people.',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: AppPalette.textSecondary,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                            else
+                              ...List.generate(regularListeners.length, (i) {
+                                final user = regularListeners[i];
+                                return Padding(
+                                  padding: EdgeInsets.only(
+                                    bottom: i == regularListeners.length - 1
+                                        ? 0
+                                        : 10,
+                                  ),
+                                  child: _listenerCard(
+                                    user: user,
+                                    me: me,
+                                    followingSet: followingSet,
+                                    myAvailable: myAvailable,
+                                  ),
+                                );
+                              }),
+                          ],
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ),
           ),
         );
       },
