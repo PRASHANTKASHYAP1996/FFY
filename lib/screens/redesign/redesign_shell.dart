@@ -168,8 +168,57 @@ class _DiscoverPageState extends State<_DiscoverPage> {
     'Just talk',
   ];
 
+  /// Keywords matched (case-insensitive) against a listener's topics + bio.
+  /// An empty list means "matches everyone" (used by 'Just talk').
+  static const Map<String, List<String>> _moodKeywords = <String, List<String>>{
+    'Lonely': <String>[
+      'lonely',
+      'loneliness',
+      'alone',
+      'friend',
+      'company',
+      'companion',
+      'listen',
+    ],
+    'Stressed': <String>[
+      'stress',
+      'anxiety',
+      'anxious',
+      'pressure',
+      'work',
+      'career',
+      'study',
+      'exam',
+      'calm',
+      'overthink',
+    ],
+    'Breakup': <String>[
+      'breakup',
+      'break-up',
+      'break up',
+      'relationship',
+      'heartbreak',
+      'love',
+      'dating',
+      'divorce',
+      'marriage',
+    ],
+    'Just talk': <String>[],
+  };
+
+  String _mood = '';
+
   final Stream<List<AppUserModel>> _stream =
       UserRepository.instance.watchAvailableListeners();
+
+  List<AppUserModel> _applyMood(List<AppUserModel> listeners) {
+    final keywords = _moodKeywords[_mood] ?? const <String>[];
+    if (_mood.isEmpty || keywords.isEmpty) return listeners;
+    return listeners.where((u) {
+      final haystack = '${u.topics.join(' ')} ${u.bio}'.toLowerCase();
+      return keywords.any(haystack.contains);
+    }).toList(growable: false);
+  }
 
   void _openProfile(AppUserModel user) {
     Navigator.of(context).push(
@@ -179,6 +228,12 @@ class _DiscoverPageState extends State<_DiscoverPage> {
           initialUser: user,
         ),
       ),
+    );
+  }
+
+  void _openSearch() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const MatchAndCallScreen()),
     );
   }
 
@@ -213,11 +268,18 @@ class _DiscoverPageState extends State<_DiscoverPage> {
                     'Check your connection and try again.',
                   );
                 }
-                final listeners = snapshot.data ?? const <AppUserModel>[];
-                if (listeners.isEmpty) {
+                final all = snapshot.data ?? const <AppUserModel>[];
+                if (all.isEmpty) {
                   return const _DiscoverMessage(
                     "No one's around right now 🌙\n"
                     'Check back in a little while.',
+                  );
+                }
+                final listeners = _applyMood(all);
+                if (listeners.isEmpty) {
+                  return _DiscoverMessage(
+                    'No one matches "$_mood" right now 🌙\n'
+                    'Tap the chip again to see everyone.',
                   );
                 }
                 return SingleChildScrollView(
@@ -271,10 +333,10 @@ class _DiscoverPageState extends State<_DiscoverPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
+              const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
@@ -293,27 +355,37 @@ class _DiscoverPageState extends State<_DiscoverPage> {
                   ),
                 ],
               ),
-              Icon(Icons.search_rounded, color: AppPalette.textMuted, size: 22),
+              IconButton(
+                tooltip: 'Search listeners',
+                onPressed: _openSearch,
+                icon: const Icon(Icons.search_rounded,
+                    color: AppPalette.textSecondary, size: 24),
+              ),
             ],
           ),
           const SizedBox(height: 12),
           Wrap(
             spacing: 7,
             children: List.generate(_moods.length, (i) {
-              final selected = i == 0;
-              return Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
-                decoration: BoxDecoration(
-                  color: selected ? AppPalette.blue : AppPalette.blueTint,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  _moods[i],
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: selected ? Colors.white : AppPalette.blue,
+              final mood = _moods[i];
+              final selected = _mood == mood;
+              return InkWell(
+                borderRadius: BorderRadius.circular(999),
+                onTap: () => setState(() => _mood = selected ? '' : mood),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: selected ? AppPalette.blue : AppPalette.blueTint,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    mood,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: selected ? Colors.white : AppPalette.blue,
+                    ),
                   ),
                 ),
               );
