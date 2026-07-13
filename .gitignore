@@ -90,3 +90,19 @@ android/.kotlin/
 
 # Stale generated Firebase config snapshots kept only for local comparison
 *.stale.*
+
+# Local working docs, audit reports, QA notes (not part of app source)
+/AUDIT.md
+/AUDIT_HANDOFF.md
+/BUG_STATUS.md
+/CHANGELOG_LAUNCH.md
+/DAILY_*.md
+/DEBUGGING_GUIDE.md
+/DEVICE_QA_REPORT.md
+/MANUAL_TEST_CHAT_CALL.md
+/QA_CHECKLIST.md
+/ROADMAP_PHASE_*.md
+/manual_testing/
+/docs/
+# keep the one doc that is already tracked in the repo
+!/docs/PHASE5_RELEASE_GATE.md
