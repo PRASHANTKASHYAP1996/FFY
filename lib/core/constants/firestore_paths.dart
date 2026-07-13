@@ -13,6 +13,8 @@ class FirestorePaths {
   static const String withdrawalRequests = 'withdrawal_requests';
   static const String paymentOrders = 'payment_orders';
   static const String walletLocks = 'wallet_locks';
+  static const String participantTokens = 'participantTokens';
+  static const String socialPosts = 'social_posts';
 
   // Chat
   static const String chatSessions = 'chat_sessions';
@@ -23,6 +25,11 @@ class FirestorePaths {
   static String userDoc(String uid) => '$users/$uid';
   static String publicUserDoc(String uid) => '$publicUsers/$uid';
   static String callDoc(String callId) => '$calls/$callId';
+  static String callParticipantTokenDoc({
+    required String callId,
+    required String uid,
+  }) =>
+      '$calls/$callId/$participantTokens/$uid';
   static String reviewDoc(String reviewId) => '$reviews/$reviewId';
   static String reportDoc(String reportId) => '$reports/$reportId';
   static String rateLimitDoc(String uid) => '$rateLimits/$uid';
@@ -32,6 +39,7 @@ class FirestorePaths {
       '$withdrawalRequests/$requestId';
   static String paymentOrderDoc(String orderId) => '$paymentOrders/$orderId';
   static String walletLockDoc(String lockId) => '$walletLocks/$lockId';
+  static String socialPostDoc(String postId) => '$socialPosts/$postId';
 
   static String chatSessionDocById(String sessionId) =>
       '$chatSessions/$sessionId';
@@ -39,8 +47,13 @@ class FirestorePaths {
   static String chatSessionDoc({
     required String speakerId,
     required String listenerId,
-  }) =>
-      '$chatSessions/${speakerId}_$listenerId';
+  }) {
+    final ids = <String>[speakerId.trim(), listenerId.trim()]..sort();
+    if (ids[0].isEmpty || ids[1].isEmpty) {
+      return '$chatSessions/';
+    }
+    return '$chatSessions/${ids[0]}_${ids[1]}';
+  }
 
   static String chatMessagesCollection(String sessionId) =>
       '$chatSessions/$sessionId/$messages';
@@ -74,7 +87,13 @@ class FirestorePaths {
 
   static const String fieldIsListener = 'isListener';
   static const String fieldIsAvailable = 'isAvailable';
+  static const String fieldIsOnCall = 'isOnCall';
+  static const String fieldCallAvailability = 'callAvailability';
+  static const String fieldOnlyChatMode = 'onlyChatMode';
+  static const String fieldUpdatedAt = 'updatedAt';
+  static const String fieldUpdatedBy = 'updatedBy';
   static const String fieldAdminBlocked = 'adminBlocked';
+  static const String fieldAdminBlockReason = 'adminBlockReason';
   static const String fieldHiddenFromDiscovery = 'hiddenFromDiscovery';
   static const String fieldDiscoverable = 'discoverable';
 
@@ -97,6 +116,23 @@ class FirestorePaths {
   static const String fieldCreatedAt = 'createdAt';
   static const String fieldLastSeen = 'lastSeen';
 
+  // ---------------- SOCIAL POST FIELDS ----------------
+
+  static const String fieldSocialPostId = 'postId';
+  static const String fieldSocialOwnerId = 'ownerId';
+  static const String fieldSocialOwnerName = 'ownerName';
+  static const String fieldSocialOwnerPhotoURL = 'ownerPhotoURL';
+  static const String fieldSocialCaption = 'caption';
+  static const String fieldSocialImageURL = 'imageURL';
+  static const String fieldSocialImagePath = 'imagePath';
+  static const String fieldSocialIsStory = 'isStory';
+  static const String fieldSocialLikeCount = 'likeCount';
+  static const String fieldSocialCommentCount = 'commentCount';
+  static const String fieldSocialShareCount = 'shareCount';
+  static const String fieldSocialCreatedAt = 'createdAt';
+  static const String fieldSocialCreatedAtMs = 'createdAtMs';
+  static const String fieldSocialExpiresAtMs = 'expiresAtMs';
+
   // ---------------- CALL FIELDS ----------------
 
   static const String fieldCallerId = 'callerId';
@@ -106,6 +142,9 @@ class FirestorePaths {
   static const String fieldCalleeName = 'calleeName';
 
   static const String fieldChannelId = 'channelId';
+
+  static const String fieldAgoraToken = 'agoraToken';
+  static const String fieldAgoraUid = 'agoraUid';
 
   static const String fieldAgoraTokenCaller = 'agoraTokenCaller';
   static const String fieldAgoraTokenCallee = 'agoraTokenCallee';
@@ -168,8 +207,7 @@ class FirestorePaths {
   static const String fieldIncomingPushFailureCount =
       'incomingPushFailureCount';
 
-  static const String fieldIncomingPushAttemptedAt =
-      'incomingPushAttemptedAt';
+  static const String fieldIncomingPushAttemptedAt = 'incomingPushAttemptedAt';
   static const String fieldIncomingPushAttemptedAtMs =
       'incomingPushAttemptedAtMs';
 
@@ -201,6 +239,9 @@ class FirestorePaths {
   static const String fieldListenerId = 'listenerId';
   static const String fieldPairUserA = 'pairUserA';
   static const String fieldPairUserB = 'pairUserB';
+  static const String fieldParticipantIds = 'participantIds';
+  static const String fieldPairKey = 'pairKey';
+  static const String fieldActualListenerId = 'actualListenerId';
   static const String fieldRequesterId = 'requesterId';
   static const String fieldResponderId = 'responderId';
   static const String fieldPendingFor = 'pendingFor';

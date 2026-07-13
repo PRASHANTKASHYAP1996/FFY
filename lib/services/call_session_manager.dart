@@ -3,9 +3,12 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
+import '../core/constants/agora_client_config.dart';
 import '../core/constants/firestore_paths.dart';
 import '../repositories/call_repository.dart';
 import 'agora_service.dart';
+import 'call_latency_tracker.dart';
+import 'firestore_service.dart';
 import 'permissions_service.dart';
 
 enum CallState {
@@ -24,10 +27,10 @@ class CallSessionManager extends ChangeNotifier {
 
   static final CallSessionManager instance = CallSessionManager._();
 
-  static const String agoraAppId = '8ba12eb2de3b4a23a7eb754453dc7ecc';
   static const int reconnectGraceSeconds = 15;
-  static const Duration _audioRecoveryCooldown = Duration(milliseconds: 900);
+  static const Duration _audioRecoveryCooldown = Duration(seconds: 5);
   static const Duration _reconnectRestartGuard = Duration(milliseconds: 800);
+  static const Duration _sameReasonAudioRecoveryWindow = Duration(seconds: 15);
 
   final CallRepository _callRepository = CallRepository.instance;
 
@@ -63,6 +66,8 @@ class CallSessionManager extends ChangeNotifier {
 
   String? _currentCallId;
   String _status = 'Idle';
+  String _initialAgoraToken = '';
+  int _initialAgoraUid = 0;
   CallState _state = CallState.idle;
 
   Timer? _timer;
@@ -72,6 +77,7 @@ class CallSessionManager extends ChangeNotifier {
 
   DateTime? _lastAudioRecoveryAt;
   DateTime? _lastReconnectStartedAt;
+  final Map<String, DateTime> _lastAudioRecoveryByReason = <String, DateTime>{};
 
   DocumentReference<Map<String, dynamic>>? get callDocRef => _callDocRef;
   String get channelId => _channelId ?? '';
@@ -120,6 +126,21 @@ class CallSessionManager extends ChangeNotifier {
   String _safeString(dynamic value, {String fallback = ''}) {
     if (value is String) return value.trim();
     return fallback;
+  }
+
+  String _redactAgoraLogMessage(String message) {
+    final trimmed = message.trim();
+    if (trimmed.isEmpty) return 'empty';
+    final lower = trimmed.toLowerCase();
+    if (lower.contains('token') ||
+        lower.contains('secret') ||
+        lower.contains('certificate')) {
+      return 'redacted';
+    }
+    return trimmed
+        .replaceAll(RegExp(r'channel=[^ ]+'), 'channel=redacted')
+        .replaceAll(RegExp(r'localUid=[^ ]+'), 'localUid=present')
+        .replaceAll(RegExp(r'remoteUid=[^ ]+'), 'remoteUid=present');
   }
 
   int _safeInt(dynamic value, {int fallback = 0}) {
@@ -201,12 +222,12 @@ class CallSessionManager extends ChangeNotifier {
 
     if (_poorNetworkActive) {
       if (_iAmCaller && remaining > 0) {
-        return 'Poor network • $remaining s left';
+        return 'Poor network - $remaining s left';
       }
 
       if (_iAmCaller && _maxPrepaidMinutesFromCall(_call) > 0) {
         final mins = _maxPrepaidMinutesFromCall(_call);
-        return 'Poor network • prepaid $mins min';
+        return 'Poor network - prepaid $mins min';
       }
 
       return 'Poor network...';
@@ -214,15 +235,15 @@ class CallSessionManager extends ChangeNotifier {
 
     if (_iAmCaller && remaining > 0) {
       return _remoteConnected
-          ? 'Remote connected • $remaining s left'
-          : 'Connected • $remaining s left';
+          ? 'Remote connected - $remaining s left'
+          : 'Connected - $remaining s left';
     }
 
     if (_iAmCaller && _maxPrepaidMinutesFromCall(_call) > 0) {
       final mins = _maxPrepaidMinutesFromCall(_call);
       return _remoteConnected
-          ? 'Remote connected • prepaid $mins min'
-          : 'Connected • prepaid $mins min';
+          ? 'Remote connected - prepaid $mins min'
+          : 'Connected - prepaid $mins min';
     }
 
     return _remoteConnected ? 'Remote connected' : 'Connected';
@@ -236,13 +257,89 @@ class CallSessionManager extends ChangeNotifier {
 
     final callerUid = _safeInt(call['callerAgoraUid']);
     final calleeUid = _safeInt(call['calleeAgoraUid']);
-    final genericUid = _safeInt(call['agoraUid']);
+    final genericUid = _safeInt(call[FirestorePaths.fieldAgoraUid]);
 
     if (_iAmCaller && callerUid > 0) return callerUid;
     if (!_iAmCaller && calleeUid > 0) return calleeUid;
     if (genericUid > 0) return genericUid;
 
     return 0;
+  }
+
+  String get _actorRole => _iAmCaller ? 'caller' : 'callee';
+
+  void _traceSetupFailure({
+    required String failureReason,
+    String tokenSource = '',
+    String micPermissionResult = '',
+    Object? error,
+  }) {
+    final callId = _callDocRef?.id.trim() ?? _currentCallId ?? '';
+    if (callId.trim().isEmpty) return;
+
+    final safeTokenSource =
+        tokenSource.trim().isEmpty ? 'unknown' : tokenSource.trim();
+    final safeMicResult = micPermissionResult.trim().isEmpty
+        ? 'unknown'
+        : micPermissionResult.trim();
+
+    CallLatencyTracker.trace(
+      'call.setup_failed',
+      callId: callId,
+      actorRole: _actorRole,
+      extra: <String, Object?>{
+        'failureReason': failureReason,
+        'state': _state.name,
+        'channelIdPresent': (_channelId ?? '').trim().isNotEmpty,
+        'channelIdLength': (_channelId ?? '').trim().length,
+        'agoraUidPresent': _localAgoraUid > 0,
+        'initialAgoraUidPresent': _initialAgoraUid > 0,
+        'callDocCallerAgoraUidPresent': _safeInt(_call['callerAgoraUid']) > 0,
+        'callDocCalleeAgoraUidPresent': _safeInt(_call['calleeAgoraUid']) > 0,
+        'tokenSource': safeTokenSource,
+        'tokenPresent':
+            safeTokenSource != 'missing' && safeTokenSource != 'unknown',
+        'appIdPresent': AgoraClientConfig.resolvedAppId.isNotEmpty,
+        'micPermissionResult': safeMicResult,
+        'callStatus': _safeString(_call[FirestorePaths.fieldStatus]),
+        if (error != null) 'errorType': error.runtimeType.toString(),
+      },
+    );
+  }
+
+  String _participantTokenUserId() {
+    return _iAmCaller
+        ? _safeString(_call[FirestorePaths.fieldCallerId])
+        : _safeString(_call[FirestorePaths.fieldCalleeId]);
+  }
+
+  Future<String> _loadScopedAgoraToken() async {
+    final ref = _callDocRef;
+    if (ref == null) return '';
+
+    final participantId = _participantTokenUserId();
+    if (participantId.isEmpty) return '';
+
+    try {
+      final snap = await ref
+          .collection(FirestorePaths.participantTokens)
+          .doc(participantId)
+          .get();
+      final data = snap.data();
+      if (data == null) return '';
+
+      final tokenChannelId = _safeString(data[FirestorePaths.fieldChannelId]);
+      if (tokenChannelId.isNotEmpty && tokenChannelId != channelId) {
+        return '';
+      }
+
+      return _safeString(data[FirestorePaths.fieldAgoraToken]);
+    } catch (e) {
+      debugPrint(
+        'CallSessionManager token lookup failed: ${e.runtimeType}',
+      );
+      return '';
+    }
   }
 
   void _notify() {
@@ -310,12 +407,15 @@ class CallSessionManager extends ChangeNotifier {
     _reconnectRemaining = 0;
     _lastAudioRecoveryAt = null;
     _lastReconnectStartedAt = null;
+    _lastAudioRecoveryByReason.clear();
   }
 
   Future<void> startOrAttach({
     required DocumentReference<Map<String, dynamic>> callDocRef,
     required String channelId,
     required bool iAmCaller,
+    String initialAgoraToken = '',
+    int initialAgoraUid = 0,
   }) async {
     final safeChannelId = channelId.trim();
     if (safeChannelId.isEmpty) return;
@@ -364,6 +464,8 @@ class CallSessionManager extends ChangeNotifier {
       _call = <String, dynamic>{};
 
       _resetSessionFlags();
+      _initialAgoraToken = initialAgoraToken.trim();
+      _initialAgoraUid = initialAgoraUid;
       _setStateAndStatus(CallState.preparing, 'Preparing...');
 
       await _init(sessionVersion: nextVersion);
@@ -388,6 +490,9 @@ class CallSessionManager extends ChangeNotifier {
   Future<bool> tryRestoreFromCallDoc({
     required DocumentReference<Map<String, dynamic>> callDocRef,
     required bool iAmCaller,
+    String initialAgoraToken = '',
+    int initialAgoraUid = 0,
+    String initialChannelId = '',
   }) async {
     try {
       final snap = await callDocRef.get();
@@ -395,7 +500,9 @@ class CallSessionManager extends ChangeNotifier {
 
       final data = snap.data() ?? <String, dynamic>{};
       final status = _safeString(data[FirestorePaths.fieldStatus]);
-      final channelId = _safeString(data[FirestorePaths.fieldChannelId]);
+      final channelId = initialChannelId.trim().isNotEmpty
+          ? initialChannelId.trim()
+          : _safeString(data[FirestorePaths.fieldChannelId]);
 
       if (status != FirestorePaths.statusAccepted) return false;
       if (channelId.isEmpty) return false;
@@ -404,6 +511,8 @@ class CallSessionManager extends ChangeNotifier {
         callDocRef: callDocRef,
         channelId: channelId,
         iAmCaller: iAmCaller,
+        initialAgoraToken: initialAgoraToken,
+        initialAgoraUid: initialAgoraUid,
       );
 
       return active;
@@ -439,6 +548,26 @@ class CallSessionManager extends ChangeNotifier {
       );
     } catch (_) {
       _billingEndRequested = false;
+    }
+  }
+
+  Future<void> _requestTechnicalFailureCleanup({
+    required String reason,
+    required int sessionVersion,
+  }) async {
+    if (!_isCurrentSession(sessionVersion)) return;
+
+    final ref = _callDocRef;
+    if (ref == null) return;
+
+    try {
+      await _callRepository.requestEndById(
+        callId: ref.id,
+        seconds: 0,
+        reason: reason,
+      );
+    } catch (_) {
+      // The backend cleanup call is best-effort; local teardown still proceeds.
     }
   }
 
@@ -570,9 +699,25 @@ class CallSessionManager extends ChangeNotifier {
   }
 
   bool _shouldSkipAudioRecovery(String source) {
+    if (_closed || _ending) return true;
+    if (_state == CallState.ended ||
+        _state == CallState.failed ||
+        _state == CallState.idle) {
+      return true;
+    }
+    final agora = _agora;
+    if (agora == null || !agora.initialized || !agora.joined) return true;
+
+    final now = DateTime.now();
+    final sameReasonAt = _lastAudioRecoveryByReason[source];
+    if (sameReasonAt != null &&
+        now.difference(sameReasonAt) < _sameReasonAudioRecoveryWindow) {
+      return true;
+    }
+
     if (_lastAudioRecoveryAt == null) return false;
 
-    final elapsed = DateTime.now().difference(_lastAudioRecoveryAt!);
+    final elapsed = now.difference(_lastAudioRecoveryAt!);
     if (elapsed >= _audioRecoveryCooldown) return false;
 
     return true;
@@ -580,13 +725,11 @@ class CallSessionManager extends ChangeNotifier {
 
   Future<void> recoverAudioFlow(String source) async {
     if (_audioRecoveryRunning) return;
-    if (_closed || _ending) return;
-    if (_agora == null) return;
-    if (!_joined && source != 'firestoreAccepted') return;
     if (_shouldSkipAudioRecovery(source)) return;
 
     _audioRecoveryRunning = true;
     _lastAudioRecoveryAt = DateTime.now();
+    _lastAudioRecoveryByReason[source] = _lastAudioRecoveryAt!;
 
     try {
       debugPrint('CallSessionManager: recovering audio flow from $source');
@@ -594,7 +737,10 @@ class CallSessionManager extends ChangeNotifier {
         onLog: (msg) => debugPrint('AgoraRecover[$source] $msg'),
       );
     } catch (e) {
-      debugPrint('CallSessionManager: audio recovery failed from $source: $e');
+      debugPrint(
+        'CallSessionManager: audio recovery failed from '
+        '$source: ${e.runtimeType}',
+      );
     } finally {
       _audioRecoveryRunning = false;
     }
@@ -627,7 +773,9 @@ class CallSessionManager extends ChangeNotifier {
           _startTimer(_sessionVersion);
         }
 
-        await recoverAudioFlow('manualSyncAccepted');
+        if (!_joined) {
+          await recoverAudioFlow('manualSyncAccepted');
+        }
       }
 
       if (status == FirestorePaths.statusEnded ||
@@ -664,10 +812,28 @@ class CallSessionManager extends ChangeNotifier {
   Future<void> _failAndRelease({
     required String message,
     required int sessionVersion,
+    String cleanupReason = '',
+    String failureReason = 'unknown',
+    String tokenSource = '',
+    String micPermissionResult = '',
+    Object? error,
   }) async {
     if (!_isCurrentSession(sessionVersion)) return;
 
+    _traceSetupFailure(
+      failureReason: failureReason,
+      tokenSource: tokenSource,
+      micPermissionResult: micPermissionResult,
+      error: error,
+    );
     _setStateAndStatus(CallState.failed, message);
+
+    if (cleanupReason.trim().isNotEmpty) {
+      await _requestTechnicalFailureCleanup(
+        reason: cleanupReason.trim(),
+        sessionVersion: sessionVersion,
+      );
+    }
 
     await _disposeSessionInternal(
       leaveAgora: true,
@@ -696,6 +862,9 @@ class CallSessionManager extends ChangeNotifier {
       _call = callSnap.data() ?? <String, dynamic>{};
       _seconds = _serverAuthoritativeSeconds(_call);
       _localAgoraUid = _localAgoraUidFromCall(_call);
+      if (_initialAgoraUid > 0) {
+        _localAgoraUid = _initialAgoraUid;
+      }
     } catch (_) {
       if (!_isCurrentSession(sessionVersion)) return;
       _call = <String, dynamic>{};
@@ -707,11 +876,25 @@ class CallSessionManager extends ChangeNotifier {
 
     if (_localAgoraUid <= 0) {
       await _failAndRelease(
-        message: 'Missing Agora identity.',
+        message: 'Missing Agora identity. No charge applied.',
         sessionVersion: sessionVersion,
+        cleanupReason: 'missing_agora_uid',
+        failureReason: 'missing_agora_uid',
       );
       return;
     }
+    CallLatencyTracker.trace(
+      'call.uid_resolved',
+      callId: ref.id,
+      actorRole: _actorRole,
+      extra: <String, Object?>{
+        'uidPresent': true,
+        'agoraUidPresent': _localAgoraUid > 0,
+        'initialAgoraUid': _initialAgoraUid,
+        'callDocCallerAgoraUid': _safeInt(_call['callerAgoraUid']),
+        'callDocCalleeAgoraUid': _safeInt(_call['calleeAgoraUid']),
+      },
+    );
 
     _setStateAndStatus(
       CallState.preparing,
@@ -720,12 +903,22 @@ class CallSessionManager extends ChangeNotifier {
 
     final micOk = await PermissionsService.requestMicrophone();
     if (!_isCurrentSession(sessionVersion)) return;
+    CallLatencyTracker.trace(
+      'call.mic_permission_result',
+      callId: ref.id,
+      actorRole: _actorRole,
+      extra: <String, Object?>{
+        'micPermissionResult': micOk ? 'granted' : 'denied',
+      },
+    );
 
     if (!micOk) {
       if (_closed) return;
       await _failAndRelease(
         message: 'Microphone permission denied.',
         sessionVersion: sessionVersion,
+        failureReason: 'microphone_permission_denied',
+        micPermissionResult: 'denied',
       );
       return;
     }
@@ -733,16 +926,86 @@ class CallSessionManager extends ChangeNotifier {
     final tokenField = _iAmCaller
         ? FirestorePaths.fieldAgoraTokenCaller
         : FirestorePaths.fieldAgoraTokenCallee;
-    final token = _safeString(_call[tokenField]);
+    final initialToken = _initialAgoraToken.trim();
+    final scopedToken =
+        initialToken.isNotEmpty ? '' : await _loadScopedAgoraToken();
+    if (!_isCurrentSession(sessionVersion)) return;
+
+    final legacyToken = _safeString(_call[tokenField]);
+    final token = initialToken.isNotEmpty
+        ? initialToken
+        : scopedToken.isNotEmpty
+            ? scopedToken
+            : legacyToken;
+    final tokenSource = initialToken.isNotEmpty
+        ? 'callable'
+        : scopedToken.isNotEmpty
+            ? 'participantDoc'
+            : legacyToken.isNotEmpty
+                ? 'legacy'
+                : 'missing';
+    final resolvedAgoraAppId = AgoraClientConfig.resolvedAppId;
+    CallLatencyTracker.trace(
+      'call.app_id_checked',
+      callId: ref.id,
+      actorRole: _actorRole,
+      extra: <String, Object?>{'appIdPresent': resolvedAgoraAppId.isNotEmpty},
+    );
+    CallLatencyTracker.trace(
+      'call.agora_app_id_checked',
+      callId: ref.id,
+      actorRole: _actorRole,
+      extra: <String, Object?>{'appIdPresent': resolvedAgoraAppId.isNotEmpty},
+    );
+
+    if (resolvedAgoraAppId.isEmpty) {
+      await _failAndRelease(
+        message: AgoraClientConfig.missingConfigurationMessage(),
+        sessionVersion: sessionVersion,
+        cleanupReason: 'missing_agora_app_id',
+        failureReason: 'missing_agora_app_id',
+        tokenSource: tokenSource,
+        micPermissionResult: 'granted',
+      );
+      return;
+    }
+
+    if (token.isEmpty) {
+      debugPrint(
+        'call.token.resolve callId=${CallLatencyTracker.safeLogId(ref.id)} '
+        'requestedTokenDocUserId='
+        '${CallLatencyTracker.safeLogId(_participantTokenUserId())} '
+        'callerId='
+        '${CallLatencyTracker.safeLogId(_safeString(_call[FirestorePaths.fieldCallerId]))} '
+        'calleeId='
+        '${CallLatencyTracker.safeLogId(_safeString(_call[FirestorePaths.fieldCalleeId]))} '
+        'status=${_safeString(_call[FirestorePaths.fieldStatus])} '
+        'tokenSource=$tokenSource tokenPresent=false',
+      );
+      await _failAndRelease(
+        message: 'Secure call token missing. Please retry. No charge applied.',
+        sessionVersion: sessionVersion,
+        cleanupReason: 'token_lookup_failed',
+        failureReason: 'missing_agora_token',
+        tokenSource: tokenSource,
+        micPermissionResult: 'granted',
+      );
+      return;
+    }
 
     _agora = AgoraService(
-      appId: agoraAppId,
+      appId: resolvedAgoraAppId,
       token: token.isEmpty ? null : token,
     );
 
     if (_closed || !_isCurrentSession(sessionVersion)) return;
 
     _setStateAndStatus(CallState.preparing, 'Starting Agora...');
+    CallLatencyTracker.trace(
+      'call.agora_engine_init_begin',
+      callId: ref.id,
+      actorRole: _iAmCaller ? 'caller' : 'callee',
+    );
 
     try {
       await _agora!.init(
@@ -756,16 +1019,21 @@ class CallSessionManager extends ChangeNotifier {
           _localAgoraUid = _agora?.localUid ?? _localAgoraUid;
           _status = _buildConnectedStatusFromCall();
           _setState(CallState.connected);
+          CallLatencyTracker.trace(
+            'call.agora_join_success',
+            callId: ref.id,
+            actorRole: _iAmCaller ? 'caller' : 'callee',
+          );
+          CallLatencyTracker.trace(
+            'call.connected',
+            callId: ref.id,
+            actorRole: _iAmCaller ? 'caller' : 'callee',
+          );
 
+          unawaited(FirestoreService.markCallJoined(callId: ref.id));
           _startTimer(sessionVersion);
 
           await recoverAudioFlow('onJoinSuccess');
-          if (!_isCurrentSession(sessionVersion) || _closed || _ending) return;
-
-          await Future<void>.delayed(const Duration(milliseconds: 500));
-          if (!_isCurrentSession(sessionVersion) || _closed || _ending) return;
-
-          await recoverAudioFlow('postJoinDelay');
         },
         onRemoteJoined: (uid) async {
           if (!_isCurrentSession(sessionVersion) || _closed || _ending) return;
@@ -778,6 +1046,11 @@ class CallSessionManager extends ChangeNotifier {
           _remoteConnected = true;
           _status = _buildConnectedStatusFromCall();
           _setState(CallState.connected);
+          CallLatencyTracker.trace(
+            'call.remote_user_joined',
+            callId: ref.id,
+            actorRole: _iAmCaller ? 'caller' : 'callee',
+          );
 
           await recoverAudioFlow('onRemoteJoined');
         },
@@ -818,7 +1091,11 @@ class CallSessionManager extends ChangeNotifier {
             _notify();
           }
 
-          await recoverAudioFlow('poorNetwork');
+          await Future<void>.delayed(const Duration(seconds: 2));
+          if (!_isCurrentSession(sessionVersion) || _closed || _ending) return;
+          if (_poorNetworkActive) {
+            await recoverAudioFlow('poorNetwork');
+          }
         },
         onNetworkRecovered: () async {
           if (!_isCurrentSession(sessionVersion) || _closed || _ending) return;
@@ -836,15 +1113,49 @@ class CallSessionManager extends ChangeNotifier {
 
           await recoverAudioFlow('networkRecovered');
         },
+        onRemoteAudioStarting: (uid) {
+          if (!_isCurrentSession(sessionVersion) || _closed || _ending) return;
+          CallLatencyTracker.trace(
+            'call.remote_audio_starting',
+            callId: ref.id,
+            actorRole: _actorRole,
+            extra: <String, Object?>{'remoteUid': uid},
+          );
+        },
+        onRemoteAudioDecoding: (uid) {
+          if (!_isCurrentSession(sessionVersion) || _closed || _ending) return;
+          CallLatencyTracker.trace(
+            'call.remote_audio_decoding',
+            callId: ref.id,
+            actorRole: _iAmCaller ? 'caller' : 'callee',
+            extra: <String, Object?>{'remoteUid': uid},
+          );
+        },
         onLog: (msg) {
-          debugPrint('AgoraLog: $msg');
+          debugPrint('AgoraLog: ${_redactAgoraLogMessage(msg)}');
         },
       );
+      CallLatencyTracker.trace(
+        'call.agora_engine_init_success',
+        callId: ref.id,
+        actorRole: _iAmCaller ? 'caller' : 'callee',
+      );
     } catch (e) {
-      debugPrint('CallSessionManager agora init failed: $e');
+      debugPrint('CallSessionManager agora init failed: ${e.runtimeType}');
+      CallLatencyTracker.trace(
+        'call.agora_init_failed',
+        callId: ref.id,
+        actorRole: _actorRole,
+        extra: <String, Object?>{'errorType': e.runtimeType.toString()},
+      );
       await _failAndRelease(
-        message: 'Failed to start voice engine.',
+        message: 'Call failed due to connection issue. No charge applied.',
         sessionVersion: sessionVersion,
+        cleanupReason: 'client_join_failed',
+        failureReason: 'agora_init_failed',
+        tokenSource: tokenSource,
+        micPermissionResult: 'granted',
+        error: e,
       );
       return;
     }
@@ -852,6 +1163,11 @@ class CallSessionManager extends ChangeNotifier {
     if (_closed || !_isCurrentSession(sessionVersion)) return;
 
     _setStateAndStatus(CallState.joining, 'Joining channel...');
+    CallLatencyTracker.trace(
+      'call.agora_join_begin',
+      callId: ref.id,
+      actorRole: _iAmCaller ? 'caller' : 'callee',
+    );
 
     try {
       await _agora!.joinVoiceChannel(
@@ -860,10 +1176,23 @@ class CallSessionManager extends ChangeNotifier {
       );
     } catch (e) {
       if (!_isCurrentSession(sessionVersion) || _closed) return;
-      debugPrint('CallSessionManager joinVoiceChannel failed: $e');
+      debugPrint(
+        'CallSessionManager joinVoiceChannel failed: ${e.runtimeType}',
+      );
+      CallLatencyTracker.trace(
+        'call.agora_join_failed',
+        callId: ref.id,
+        actorRole: _actorRole,
+        extra: <String, Object?>{'errorType': e.runtimeType.toString()},
+      );
       await _failAndRelease(
-        message: 'Failed to join voice channel.',
+        message: 'Call failed due to connection issue. No charge applied.',
         sessionVersion: sessionVersion,
+        cleanupReason: 'agora_join_failed',
+        failureReason: 'agora_join_failed',
+        tokenSource: tokenSource,
+        micPermissionResult: 'granted',
+        error: e,
       );
       return;
     }
@@ -901,7 +1230,9 @@ class CallSessionManager extends ChangeNotifier {
           _startTimer(sessionVersion);
         }
 
-        await recoverAudioFlow('firestoreAccepted');
+        if (!_joined) {
+          await recoverAudioFlow('firestoreAccepted');
+        }
       }
 
       if ((status == FirestorePaths.statusEnded ||
@@ -923,6 +1254,12 @@ class CallSessionManager extends ChangeNotifier {
 
     _ending = true;
     _setState(CallState.ending);
+    CallLatencyTracker.trace(
+      'call.end_tap',
+      callId: ref.id,
+      actorRole: _iAmCaller ? 'caller' : 'callee',
+      extra: <String, Object?>{'reason': reason},
+    );
     _stopTimer();
 
     _reconnectTimer?.cancel();
@@ -965,6 +1302,12 @@ class CallSessionManager extends ChangeNotifier {
       finalState: CallState.ended,
       finalStatus: 'Call ended',
     );
+    CallLatencyTracker.trace(
+      'call.end_success',
+      callId: ref.id,
+      actorRole: _iAmCaller ? 'caller' : 'callee',
+      extra: <String, Object?>{'reason': reason},
+    );
   }
 
   Future<void> _disposeSessionInternal({
@@ -1005,6 +1348,8 @@ class CallSessionManager extends ChangeNotifier {
       _iAmCaller = false;
       _remoteUid = 0;
       _localAgoraUid = 0;
+      _initialAgoraToken = '';
+      _initialAgoraUid = 0;
       _reconnectRemaining = 0;
       _callDocRef = null;
       _currentCallId = null;
@@ -1013,6 +1358,7 @@ class CallSessionManager extends ChangeNotifier {
       _seconds = 0;
       _lastAudioRecoveryAt = null;
       _lastReconnectStartedAt = null;
+      _lastAudioRecoveryByReason.clear();
       _startLocked = false;
 
       if (clearStartingFlag) {
@@ -1023,6 +1369,20 @@ class CallSessionManager extends ChangeNotifier {
     } finally {
       _disposingInternally = false;
     }
+  }
+
+  Future<void> disposeForUid(String uid) async {
+    final safeUid = uid.trim();
+    if (safeUid.isEmpty) return;
+    if (_callDocRef == null && !active) return;
+
+    final localUid = _participantTokenUserId().trim();
+    if (localUid.isNotEmpty && localUid != safeUid) return;
+
+    await _disposeSessionInternal(
+      finalState: CallState.idle,
+      finalStatus: 'Signed out',
+    );
   }
 
   @override

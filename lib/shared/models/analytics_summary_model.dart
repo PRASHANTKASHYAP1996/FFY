@@ -90,8 +90,7 @@ class AnalyticsSummaryModel {
 
   String get answerRateLabel => '${(answerRate * 100).toStringAsFixed(1)}%';
   String get missedRateLabel => '${(missedRate * 100).toStringAsFixed(1)}%';
-  String get paidCallRateLabel =>
-      '${(paidCallRate * 100).toStringAsFixed(1)}%';
+  String get paidCallRateLabel => '${(paidCallRate * 100).toStringAsFixed(1)}%';
 
   Map<String, dynamic> toMap() {
     return {

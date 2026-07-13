@@ -4,22 +4,47 @@ import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 
+/// Default [FirebaseOptions] for use with your Firebase apps.
+///
+/// Example:
+/// ```dart
+/// import 'firebase_options.dart';
+/// // ...
+/// await Firebase.initializeApp(
+///   options: DefaultFirebaseOptions.currentPlatform,
+/// );
+/// ```
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
-      return web;
+      throw UnsupportedError(
+        'DefaultFirebaseOptions have not been configured for web - '
+        'you can reconfigure this by running the FlutterFire CLI again.',
+      );
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
         return android;
       case TargetPlatform.iOS:
-        return ios;
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for ios - '
+          'you can reconfigure this by running the FlutterFire CLI again.',
+        );
       case TargetPlatform.macOS:
-        return macos;
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for macos - '
+          'you can reconfigure this by running the FlutterFire CLI again.',
+        );
       case TargetPlatform.windows:
-        return windows;
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for windows - '
+          'you can reconfigure this by running the FlutterFire CLI again.',
+        );
       case TargetPlatform.linux:
-        return linux;
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for linux - '
+          'you can reconfigure this by running the FlutterFire CLI again.',
+        );
       default:
         throw UnsupportedError(
           'DefaultFirebaseOptions are not supported for this platform.',
@@ -27,65 +52,11 @@ class DefaultFirebaseOptions {
     }
   }
 
-  // ✅ IMPORTANT:
-  // Now you MUST paste your real Android FirebaseOptions values below.
-
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyB3V8hhSI9lNNraAX_SvUkQF-cLaRRZFuc',
-    appId: '1:481804518660:android:055d3acfbb3cc81f99fc51',
+    appId: '1:481804518660:android:75aebf0ed8f7d24799fc51',
     messagingSenderId: '481804518660',
     projectId: 'friendify-ef682',
     storageBucket: 'friendify-ef682.firebasestorage.app',
   );
-
-  // Best way: run `flutterfire configure` to auto-fill these.
-
-  static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyBrFQZHGwkfYFYvccpcROJyXbkHr74N5KI',
-    appId: '1:481804518660:ios:3d74cc8493b3b2f299fc51',
-    messagingSenderId: '481804518660',
-    projectId: 'friendify-ef682',
-    storageBucket: 'friendify-ef682.firebasestorage.app',
-    iosBundleId: 'com.example.friendify',
-  );
-
-  // These are optional for your current setup.
-
-  static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyBrFQZHGwkfYFYvccpcROJyXbkHr74N5KI',
-    appId: '1:481804518660:ios:3d74cc8493b3b2f299fc51',
-    messagingSenderId: '481804518660',
-    projectId: 'friendify-ef682',
-    storageBucket: 'friendify-ef682.firebasestorage.app',
-    iosBundleId: 'com.example.friendify',
-  );
-
-  static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyArRbcgsUR_J9zeZFp_Oj_FyiU9KoK4RI0',
-    appId: '1:481804518660:web:d58305346c82fff499fc51',
-    messagingSenderId: '481804518660',
-    projectId: 'friendify-ef682',
-    authDomain: 'friendify-ef682.firebaseapp.com',
-    storageBucket: 'friendify-ef682.firebasestorage.app',
-    measurementId: 'G-4FX4JPSNBJ',
-  );
-
-  static const FirebaseOptions linux = FirebaseOptions(
-    apiKey: 'PASTE_FROM_FIREBASE',
-    appId: 'PASTE_FROM_FIREBASE',
-    messagingSenderId: 'PASTE_FROM_FIREBASE',
-    projectId: 'PASTE_FROM_FIREBASE',
-    storageBucket: 'PASTE_FROM_FIREBASE',
-  );
-
-  static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyArRbcgsUR_J9zeZFp_Oj_FyiU9KoK4RI0',
-    appId: '1:481804518660:web:454b7ed28099cb5399fc51',
-    messagingSenderId: '481804518660',
-    projectId: 'friendify-ef682',
-    authDomain: 'friendify-ef682.firebaseapp.com',
-    storageBucket: 'friendify-ef682.firebasestorage.app',
-    measurementId: 'G-BTQEZP1HZ4',
-  );
-
 }

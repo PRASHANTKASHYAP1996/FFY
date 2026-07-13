@@ -13,13 +13,33 @@ import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import 'app.dart';
+import 'core/constants/agora_client_config.dart';
+import 'core/constants/legal_links.dart';
 import 'firebase_options.dart';
+import 'services/app_log.dart';
+import 'services/call_latency_tracker.dart';
 import 'services/call_session_manager.dart';
+import 'services/notification_channels.dart';
 import 'services/notifications_service.dart';
 
 final Map<String, DateTime> _bgHandledEvents = <String, DateTime>{};
 bool _backgroundHandlerRegistered = false;
 bool _appCheckActivated = false;
+const String _friendifyAppVersion = '1.0.0';
+const String _friendifyBuildNumber = '1';
+const String _friendifyLocalBuildId = String.fromEnvironment(
+  'FRIENDIFY_LOCAL_BUILD_ID',
+  defaultValue: 'dev',
+);
+
+void _logStartupBuildMarker() {
+  debugPrint(
+    'startup.build_marker '
+    'appVersion=$_friendifyAppVersion '
+    'buildNumber=$_friendifyBuildNumber '
+    'localBuildId=${AppLog.safeId(_friendifyLocalBuildId)}',
+  );
+}
 
 void _cleanupBgHandledEvents() {
   _bgHandledEvents.removeWhere(
@@ -67,13 +87,16 @@ String _configuredAppCheckMode() {
 }
 
 bool _shouldUseReleaseAppCheckProvider() {
+  if (kReleaseMode) {
+    return true;
+  }
   switch (_configuredAppCheckMode()) {
     case 'release':
       return true;
     case 'debug':
       return false;
     case 'off':
-      return false;  
+      return false;
     default:
       return kReleaseMode;
   }
@@ -89,9 +112,8 @@ String _currentAppCheckModeLabel() {
     return 'disabled (override=off)';
   }
 
-  final resolvedMode = _shouldUseReleaseAppCheckProvider()
-      ? 'release-attestation'
-      : 'debug';
+  final resolvedMode =
+      _shouldUseReleaseAppCheckProvider() ? 'release-attestation' : 'debug';
 
   return configuredMode == 'auto'
       ? resolvedMode
@@ -124,7 +146,15 @@ Future<void> _activateAppCheckSafely() async {
     return;
   }
 
-  if (_configuredAppCheckMode() == 'off') {
+  final configuredMode = _configuredAppCheckMode();
+  if (kReleaseMode && configuredMode != 'auto' && configuredMode != 'release') {
+    throw StateError(
+      'Release builds must use Play Integrity / DeviceCheck. '
+      'Remove FRIENDIFY_APP_CHECK_MODE=$configuredMode from the release build.',
+    );
+  }
+
+  if (configuredMode == 'off') {
     debugPrint(
       'Firebase App Check is disabled via '
       '--dart-define=FRIENDIFY_APP_CHECK_MODE=off. '
@@ -138,14 +168,11 @@ Future<void> _activateAppCheckSafely() async {
 
   try {
     await FirebaseAppCheck.instance.activate(
-      androidProvider:
-          useReleaseProvider
-              ? AndroidProvider.playIntegrity
-              : AndroidProvider.debug,
+      androidProvider: useReleaseProvider
+          ? AndroidProvider.playIntegrity
+          : AndroidProvider.debug,
       appleProvider:
-          useReleaseProvider
-              ? AppleProvider.deviceCheck
-              : AppleProvider.debug,
+          useReleaseProvider ? AppleProvider.deviceCheck : AppleProvider.debug,
     );
 
     await FirebaseAppCheck.instance.setTokenAutoRefreshEnabled(true);
@@ -157,9 +184,8 @@ Future<void> _activateAppCheckSafely() async {
 
     if (!useReleaseProvider) {
       debugPrint(
-        'App Check is using the debug provider. '
-        'Keep this only for local/dev installs and register the debug token '
-        'if Firebase App Check enforcement is enabled.',
+        'App Check debug provider active. Developer Diagnostics can be used '
+        'to confirm local verification.',
       );
     } else {
       debugPrint(
@@ -181,6 +207,13 @@ Future<void> _activateAppCheckSafely() async {
       debugPrint(
         'Release attestation failed. Verify Firebase App Check registration, '
         'Play Integrity setup, signing SHA fingerprints, and package name.',
+      );
+      Error.throwWithStackTrace(
+        StateError(
+          'Firebase App Check activation failed in release attestation mode. '
+          'Release builds must not continue without App Check.',
+        ),
+        st,
       );
     } else {
       debugPrint(
@@ -266,11 +299,36 @@ Future<void> _registerBackgroundMessageHandlerOnce() async {
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
-    await _ensureFirebaseInitialized(activateAppCheck: false);
-
     final data = message.data;
     final type = _safeDataString(data, 'type');
     final callId = _safeDataString(data, 'callId');
+    final safeType = type.isEmpty ? 'unknown' : type;
+    debugPrint('fcm.background_handler_enter type=$safeType');
+    if (type != 'incoming_call' && type != 'missed_call') {
+      debugPrint('fcm.background_handler_non_call_ignored');
+      debugPrint('fcm.background_handler_no_ui_work');
+      AppLog.debugThrottled(
+        'fcm.background_non_call_ignored',
+        'fcm.duplicate_background_isolate_ignored',
+      );
+      return;
+    }
+
+    if (type == 'incoming_call') {
+      debugPrint('fcm.background_handler_call_message type=incoming_call');
+      debugPrint('fcm.background_handler_no_ui_work');
+      debugPrint('fcm.bg_isolate_start_suppressed_if_foreground');
+      AppLog.debugThrottled(
+        'fcm.background_incoming_native_owner:$callId',
+        'fcm.duplicate_background_isolate_ignored',
+      );
+      return;
+    }
+
+    await _ensureFirebaseInitialized(activateAppCheck: false);
+    debugPrint('fcm.background_handler_call_message type=missed_call');
+    debugPrint('fcm.background_handler_no_ui_work');
+
     final callerName = _safeDataString(
       data,
       'callerName',
@@ -282,7 +340,9 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
         : 'bg::$type::${message.messageId ?? data.toString()}';
 
     if (_wasBgEventHandledRecently(dedupeKey)) {
-      debugPrint('Skipping duplicate background push: $dedupeKey');
+      debugPrint(
+        'Skipping duplicate background push: ${AppLog.safeId(dedupeKey)}',
+      );
       return;
     }
     _markBgEventHandled(dedupeKey);
@@ -292,20 +352,20 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
         debugPrint('Background incoming_call ignored: missing callId');
         return;
       }
+      CallLatencyTracker.trace(
+        'call.incoming_fcm_received',
+        callId: callId,
+        actorRole: 'callee',
+      );
 
       final session = CallSessionManager.instance;
       final activeCallId = session.callDocRef?.id.trim() ?? '';
       if (session.active && activeCallId.isNotEmpty && activeCallId == callId) {
         debugPrint(
-          'Background incoming_call ignored because call is already active locally: $callId',
+          'Background incoming_call ignored because call is already active '
+          'locally: ${AppLog.safeId(callId)}',
         );
         return;
-      }
-
-      try {
-        await FlutterCallkitIncoming.endCall(callId);
-      } catch (_) {
-        // ignore stale cleanup failure
       }
 
       final params = _buildIncomingCallKitParams(
@@ -313,7 +373,25 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
         callerName: callerName,
       );
 
+      CallLatencyTracker.trace(
+        'call.incoming_callkit_show_begin',
+        callId: callId,
+        actorRole: 'callee',
+      );
+      debugPrint(
+        'callkit.payload_prepared callIdShort=${AppLog.safeId(callId)}',
+      );
       await FlutterCallkitIncoming.showCallkitIncoming(params);
+      CallLatencyTracker.trace(
+        'call.incoming_callkit_show_success',
+        callId: callId,
+        actorRole: 'callee',
+      );
+      CallLatencyTracker.trace(
+        'call.incoming_notification_shown',
+        callId: callId,
+        actorRole: 'callee',
+      );
       return;
     }
 
@@ -336,6 +414,16 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  AppLog.trace('startup.critical_init_begin', area: 'startup');
+  debugPrint('startup.critical_init_begin');
+  _logStartupBuildMarker();
+
+  final startupValidationError = await _validateStartupReadiness();
+  if (startupValidationError.isNotEmpty) {
+    runApp(FirebaseInitErrorApp(error: startupValidationError));
+    return;
+  }
+
   await _configureAppStartup();
 
   final firebaseInit = await _initializeFirebase();
@@ -344,15 +432,28 @@ Future<void> main() async {
     return;
   }
 
+  AppLog.trace('startup.critical_init_success', area: 'startup');
+  debugPrint('startup.critical_init_success');
   runApp(const FriendifyBootstrapApp());
+}
+
+Future<String> _validateStartupReadiness() async {
+  try {
+    AgoraClientConfig.assertReleaseReady();
+    LegalLinks.assertReleaseReady();
+    return '';
+  } catch (e, st) {
+    debugPrint('Startup validation failed: $e');
+    debugPrintStack(stackTrace: st);
+    return 'Startup validation failed:\n$e';
+  }
 }
 
 Future<void> _configureAppStartup() async {
   FlutterForegroundTask.initCommunicationPort();
+  await ensureFriendifyNotificationChannelsInitialized();
 
   await _registerBackgroundMessageHandlerOnce();
-
-  _initForegroundTask();
 
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -421,6 +522,22 @@ Future<void> _startNotificationsSafely() async {
   }
 }
 
+Future<void> _startPostFrameServicesSafely() async {
+  AppLog.trace('startup.post_frame_init_begin', area: 'startup');
+  debugPrint('startup.post_frame_init_begin');
+  try {
+    _initForegroundTask();
+    await _startNotificationsSafely();
+    AppLog.trace('startup.post_frame_init_success', area: 'startup');
+    debugPrint('startup.post_frame_init_success');
+  } catch (e, st) {
+    AppLog.trace('startup.post_frame_init_failed',
+        area: 'startup', fields: <String, Object?>{'error': e.runtimeType});
+    debugPrint('startup.post_frame_init_failed: $e');
+    debugPrintStack(stackTrace: st);
+  }
+}
+
 class FriendifyBootstrapApp extends StatefulWidget {
   const FriendifyBootstrapApp({super.key});
 
@@ -428,20 +545,37 @@ class FriendifyBootstrapApp extends StatefulWidget {
   State<FriendifyBootstrapApp> createState() => _FriendifyBootstrapAppState();
 }
 
-class _FriendifyBootstrapAppState extends State<FriendifyBootstrapApp> {
+class _FriendifyBootstrapAppState extends State<FriendifyBootstrapApp>
+    with WidgetsBindingObserver {
   bool _startedNotifications = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (_startedNotifications) return;
 
       _startedNotifications = true;
-      unawaited(_startNotificationsSafely());
+      unawaited(_startPostFrameServicesSafely());
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    AppLog.trace('app_lifecycle.bootstrap_dispose', area: 'lifecycle');
+    debugPrint('app_lifecycle.bootstrap_dispose');
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    AppLog.trace('app_lifecycle.state',
+        area: 'lifecycle', fields: <String, Object?>{'state': state.name});
+    debugPrint('app_lifecycle.state=${state.name}');
   }
 
   @override
@@ -457,6 +591,17 @@ class FirebaseInitErrorApp extends StatelessWidget {
     super.key,
     required this.error,
   });
+
+  bool get _showTechnicalDetails => !kReleaseMode && error.trim().isNotEmpty;
+
+  String get _friendlyMessage {
+    if (kReleaseMode) {
+      return 'Friendify could not finish setup. Please update the app or try '
+          'again in a few minutes.';
+    }
+    return 'An initialization or build-configuration error occurred. Please '
+        'check release setup and Firebase configuration, then try again.';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -483,20 +628,22 @@ class FirebaseInitErrorApp extends StatelessWidget {
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 8),
-                    const Text(
-                      'An initialization error occurred. Please check Firebase setup and try again.',
+                    Text(
+                      _friendlyMessage,
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: const TextStyle(
                         color: Colors.black54,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(height: 14),
-                    SelectableText(
-                      error,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.black54),
-                    ),
+                    if (_showTechnicalDetails) ...[
+                      const SizedBox(height: 14),
+                      SelectableText(
+                        error,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.black54),
+                      ),
+                    ],
                   ],
                 ),
               ),

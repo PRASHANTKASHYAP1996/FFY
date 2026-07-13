@@ -104,14 +104,17 @@ class HistoryRepository {
       );
     }
 
-    controller = StreamController<List<CallHistoryItem>>(
+    controller = StreamController<List<CallHistoryItem>>.broadcast(
       onListen: () {
         incomingSub = incomingStream.listen(
           (snap) {
             incomingDocs = snap.docs;
             emitMerged();
           },
-          onError: controller.addError,
+          onError: (Object error, StackTrace stackTrace) {
+            if (controller.isClosed) return;
+            controller.addError(error, stackTrace);
+          },
         );
 
         outgoingSub = outgoingStream.listen(
@@ -119,7 +122,10 @@ class HistoryRepository {
             outgoingDocs = snap.docs;
             emitMerged();
           },
-          onError: controller.addError,
+          onError: (Object error, StackTrace stackTrace) {
+            if (controller.isClosed) return;
+            controller.addError(error, stackTrace);
+          },
         );
       },
       onCancel: () async {
@@ -358,7 +364,7 @@ class HistoryRepository {
 
   String badgeText(CallHistoryItem item) {
     if (item.isMissed) {
-      return item.isIncoming ? 'Missed' : 'Not answered';
+      return _missedResultLabel(item);
     }
 
     if (item.isPaidCall) {
@@ -380,18 +386,7 @@ class HistoryRepository {
 
   String secondaryStatus(CallHistoryItem item) {
     if (item.isMissed) {
-      final rejectedReason = item.rejectedReason.trim();
-      final endedReason = item.endedReason.trim();
-
-      if (rejectedReason.isNotEmpty) {
-        return _humanizeReason(rejectedReason);
-      }
-
-      if (endedReason.isNotEmpty) {
-        return _humanizeReason(endedReason);
-      }
-
-      return item.isIncoming ? 'Missed call' : 'Call not answered';
+      return _missedResultDescription(item);
     }
 
     if (item.isFreeAnsweredCall) {
@@ -406,47 +401,55 @@ class HistoryRepository {
     return item.amount > 0 ? 'Amount charged' : 'No charge';
   }
 
-  String _humanizeReason(String value) {
-    final safe = value.trim().toLowerCase();
+  String _missedReason(CallHistoryItem item) {
+    final rejectedReason = item.rejectedReason.trim();
+    if (rejectedReason.isNotEmpty) return rejectedReason;
+    return item.endedReason.trim();
+  }
 
+  String _missedResultLabel(CallHistoryItem item) {
+    final safe = _missedReason(item).toLowerCase();
     switch (safe) {
-      case 'timeout':
-        return 'Timed out';
-      case 'busy':
-        return 'User was busy';
-      case 'caller_cancel':
-      case 'caller_cancelled':
-        return 'Caller cancelled';
-      case 'caller_timeout':
-      case 'caller_timeout_cleanup':
-      case 'no_answer':
-        return 'No answer';
       case 'callee_reject':
       case 'callee_reject_callkit':
-        return 'Rejected';
+        return 'Declined';
+      case 'caller_cancel':
+      case 'caller_cancelled':
       case 'callkit_ended':
-        return 'Call ended from system UI';
-      case 'invalid':
-        return 'Invalid call';
-      case 'invalid_channel':
-        return 'Invalid channel';
-      case 'open_call_failed':
-        return 'Open call failed';
-      case 'user_end':
-        return 'Ended normally';
-      case 'connection_lost':
-        return 'Connection lost';
-      case 'remote_left':
-        return 'Other user left';
+        return 'Cancelled';
+      case 'timeout':
+      case 'caller_timeout':
+      case 'caller_timeout_cleanup':
       case 'server_timeout':
-        return 'Timed out';
       case 'stale_timeout':
-        return 'Call expired';
-      case 'missed':
-        return 'Missed call';
+      case 'no_answer':
+        return item.isIncoming ? 'Missed' : 'Timed out';
+      case 'busy':
+        return 'Missed';
+      case 'invalid':
+      case 'invalid_channel':
+      case 'open_call_failed':
+      case 'connection_lost':
+      case 'remote_left':
+        return 'Could not connect';
       default:
-        if (safe.isEmpty) return 'Unknown';
-        return safe.replaceAll('_', ' ');
+        return item.isIncoming ? 'Missed' : 'Timed out';
+    }
+  }
+
+  String _missedResultDescription(CallHistoryItem item) {
+    switch (_missedResultLabel(item)) {
+      case 'Declined':
+        return 'Call declined. No charge applied.';
+      case 'Missed':
+        return 'Call missed. No charge applied.';
+      case 'Timed out':
+        return 'Call timed out. No charge applied.';
+      case 'Cancelled':
+        return 'Call cancelled. No charge applied.';
+      case 'Could not connect':
+      default:
+        return 'Call could not connect. No charge applied.';
     }
   }
 

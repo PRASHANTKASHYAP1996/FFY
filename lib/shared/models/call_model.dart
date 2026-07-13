@@ -484,8 +484,7 @@ class CallModel {
           incomingPushAttemptedAt ?? this.incomingPushAttemptedAt,
       incomingPushAttemptedAtMs:
           incomingPushAttemptedAtMs ?? this.incomingPushAttemptedAtMs,
-      incomingPushNoTokens:
-          incomingPushNoTokens ?? this.incomingPushNoTokens,
+      incomingPushNoTokens: incomingPushNoTokens ?? this.incomingPushNoTokens,
       incomingPushError: incomingPushError ?? this.incomingPushError,
       cancelSignalSent: cancelSignalSent ?? this.cancelSignalSent,
       cancelSignalSentAt: cancelSignalSentAt ?? this.cancelSignalSentAt,
@@ -497,8 +496,7 @@ class CallModel {
           reserveReleaseIdempotencyKey ?? this.reserveReleaseIdempotencyKey,
       callerChargeTxId: callerChargeTxId ?? this.callerChargeTxId,
       listenerPayoutTxId: listenerPayoutTxId ?? this.listenerPayoutTxId,
-      platformRevenueTxId:
-          platformRevenueTxId ?? this.platformRevenueTxId,
+      platformRevenueTxId: platformRevenueTxId ?? this.platformRevenueTxId,
       refundTxId: refundTxId ?? this.refundTxId,
       currency: currency ?? this.currency,
       gatewayContext: gatewayContext ?? this.gatewayContext,

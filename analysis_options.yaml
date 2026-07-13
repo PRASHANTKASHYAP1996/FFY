@@ -4,3 +4,5 @@ analyzer:
   exclude:
     - _archive/**
     - archive/**
+    - third_party/flutter_callkit_incoming/example/**
+    - third_party/flutter_callkit_incoming/test/**

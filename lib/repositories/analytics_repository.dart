@@ -121,9 +121,8 @@ class AnalyticsRepository {
   }
 
   RetentionAnalyticsModel _retentionFromMap(Map<String, dynamic> map) {
-    final topRepeatPairs = _asMapList(map['topRepeatPairs'])
-        .map(_repeatPairFromMap)
-        .toList();
+    final topRepeatPairs =
+        _asMapList(map['topRepeatPairs']).map(_repeatPairFromMap).toList();
 
     return RetentionAnalyticsModel(
       uniqueCallers: _asInt(map['uniqueCallers']),
@@ -175,6 +174,10 @@ class AnalyticsRepository {
     return _summaryFromMap(map);
   }
 
+  Future<void> refreshCaches() async {
+    await _callMap('analyticsRefreshCaches_v1');
+  }
+
   Future<List<ListenerLeaderboardItem>> loadListenerLeaderboard() async {
     final map = await _callMap('analyticsLoadListenerLeaderboard_v1');
     return _asMapList(map['items']).map(_leaderboardItemFromMap).toList();
@@ -183,8 +186,7 @@ class AnalyticsRepository {
   List<ListenerLeaderboardItem> topEarners(
     List<ListenerLeaderboardItem> items,
   ) {
-    final out = [...items]
-      ..sort((a, b) {
+    final out = [...items]..sort((a, b) {
         final earnCompare = b.totalEarned.compareTo(a.totalEarned);
         if (earnCompare != 0) return earnCompare;
 
@@ -215,8 +217,7 @@ class AnalyticsRepository {
   List<ListenerLeaderboardItem> mostFollowed(
     List<ListenerLeaderboardItem> items,
   ) {
-    final out = [...items]
-      ..sort((a, b) {
+    final out = [...items]..sort((a, b) {
         final followerCompare = b.followersCount.compareTo(a.followersCount);
         if (followerCompare != 0) return followerCompare;
 

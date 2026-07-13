@@ -136,7 +136,8 @@ class WalletRepository {
       }
     }
 
-    out.sort((a, b) => _createdAtMsFromMap(b).compareTo(_createdAtMsFromMap(a)));
+    out.sort(
+        (a, b) => _createdAtMsFromMap(b).compareTo(_createdAtMsFromMap(a)));
     return out;
   }
 
@@ -614,7 +615,8 @@ class WalletRepository {
     return <String, dynamic>{};
   }
 
-  bool isCommercialWalletReadyFromLedger(List<Map<String, dynamic>> ledgerDocs) {
+  bool isCommercialWalletReadyFromLedger(
+      List<Map<String, dynamic>> ledgerDocs) {
     for (final doc in ledgerDocs) {
       final type = _asString(doc[FirestorePaths.fieldTransactionType]);
       if (type == FirestorePaths.txTypeTopup) {

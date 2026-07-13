@@ -66,7 +66,9 @@ class AgoraService {
         // ignore
       }
     } catch (e) {
-      onLog?.call('Agora existing engine cleanup failed: $e');
+      onLog?.call(
+        'Agora existing engine cleanup failed: ${e.runtimeType}',
+      );
     }
   }
 
@@ -77,6 +79,8 @@ class AgoraService {
     VoidCallback? onConnectionLost,
     VoidCallback? onPoorNetwork,
     VoidCallback? onNetworkRecovered,
+    Function(int uid)? onRemoteAudioStarting,
+    Function(int uid)? onRemoteAudioDecoding,
     Function(String message)? onLog,
   }) async {
     if (_initialized && _engine != null && !_released) {
@@ -125,14 +129,14 @@ class AgoraService {
             _poorNetworkActive = false;
             _joinedChannelId = connection.channelId;
             _localUid = connection.localUid;
+            final joinedChannelText = '${connection.channelId}';
+            final joinedUidText = '${connection.localUid}';
 
             onLog?.call(
               'Agora joined successfully. '
-              'channel=${connection.channelId} localUid=${connection.localUid}',
+              'channelPresent=${joinedChannelText.isNotEmpty && joinedChannelText != 'null'} '
+              'localUidPresent=${joinedUidText.isNotEmpty && joinedUidText != 'null'}',
             );
-
-            await ensureAudioFlow(onLog: onLog);
-            if (_released) return;
 
             onJoinSuccess();
           },
@@ -140,16 +144,13 @@ class AgoraService {
             if (_released) return;
 
             _poorNetworkActive = false;
-            onLog?.call('Agora remote user joined: $remoteUid');
-            await ensureAudioFlow(onLog: onLog);
-            if (_released) return;
-
+            onLog?.call('Agora remote user joined.');
             onRemoteJoined(remoteUid);
           },
           onUserOffline: (connection, remoteUid, reason) {
             if (_released) return;
 
-            onLog?.call('Agora remote user offline: $remoteUid reason=$reason');
+            onLog?.call('Agora remote user offline reason=$reason');
             onRemoteLeft(remoteUid);
           },
           onConnectionStateChanged: (connection, state, reason) {
@@ -159,7 +160,7 @@ class AgoraService {
 
             final lost =
                 state == ConnectionStateType.connectionStateDisconnected ||
-                state == ConnectionStateType.connectionStateFailed;
+                    state == ConnectionStateType.connectionStateFailed;
 
             if (lost && !_connectionLostFired) {
               _connectionLostFired = true;
@@ -185,7 +186,7 @@ class AgoraService {
               (connection, remoteUid, state, reason, elapsed) {
             if (_released) return;
             onLog?.call(
-              'Agora remote audio state remoteUid=$remoteUid '
+              'Agora remote audio state '
               'state=$state reason=$reason elapsed=$elapsed',
             );
 
@@ -199,6 +200,11 @@ class AgoraService {
 
             if (state == RemoteAudioState.remoteAudioStateDecoding ||
                 state == RemoteAudioState.remoteAudioStateStarting) {
+              if (state == RemoteAudioState.remoteAudioStateStarting) {
+                onRemoteAudioStarting?.call(remoteUid);
+              } else if (state == RemoteAudioState.remoteAudioStateDecoding) {
+                onRemoteAudioDecoding?.call(remoteUid);
+              }
               if (_poorNetworkActive) {
                 _poorNetworkActive = false;
                 onNetworkRecovered?.call();
@@ -206,8 +212,12 @@ class AgoraService {
             }
           },
           onError: (err, msg) {
-            debugPrint('Agora onError: $err $msg');
-            onLog?.call('Agora error=$err msg=$msg');
+            debugPrint(
+              'Agora onError code=$err messagePresent=${msg.trim().isNotEmpty}',
+            );
+            onLog?.call(
+              'Agora error=$err messagePresent=${msg.trim().isNotEmpty}',
+            );
 
             if (_joining) {
               _joining = false;
@@ -219,7 +229,7 @@ class AgoraService {
       _initialized = true;
       onLog?.call('Agora initialization completed.');
     } catch (e) {
-      onLog?.call('Agora initialization failed: $e');
+      onLog?.call('Agora initialization failed: ${e.runtimeType}');
       try {
         await engine.release();
       } catch (_) {
@@ -295,21 +305,25 @@ class AgoraService {
       await engine.enableAudio();
       onLog?.call('ensureAudioFlow: enableAudio OK');
     } catch (e) {
-      onLog?.call('ensureAudioFlow: enableAudio failed: $e');
+      onLog?.call('ensureAudioFlow: enableAudio failed: ${e.runtimeType}');
     }
 
     try {
       await engine.enableLocalAudio(true);
       onLog?.call('ensureAudioFlow: enableLocalAudio(true) OK');
     } catch (e) {
-      onLog?.call('ensureAudioFlow: enableLocalAudio(true) failed: $e');
+      onLog?.call(
+        'ensureAudioFlow: enableLocalAudio(true) failed: ${e.runtimeType}',
+      );
     }
 
     try {
       await engine.muteLocalAudioStream(false);
       onLog?.call('ensureAudioFlow: muteLocalAudioStream(false) OK');
     } catch (e) {
-      onLog?.call('ensureAudioFlow: muteLocalAudioStream(false) failed: $e');
+      onLog?.call(
+        'ensureAudioFlow: muteLocalAudioStream(false) failed: ${e.runtimeType}',
+      );
     }
 
     if (_joined) {
@@ -317,7 +331,10 @@ class AgoraService {
         await engine.setEnableSpeakerphone(true);
         onLog?.call('ensureAudioFlow: setEnableSpeakerphone(true) OK');
       } catch (e) {
-        onLog?.call('ensureAudioFlow: setEnableSpeakerphone(true) failed: $e');
+        onLog?.call(
+          'ensureAudioFlow: setEnableSpeakerphone(true) failed: '
+          '${e.runtimeType}',
+        );
       }
     }
   }
@@ -333,7 +350,7 @@ class AgoraService {
         notificationText: 'Voice call is running in background',
       );
     } catch (e) {
-      debugPrint('Foreground service start failed: $e');
+      debugPrint('Foreground service start failed: ${e.runtimeType}');
     }
   }
 
@@ -344,7 +361,7 @@ class AgoraService {
 
       await FlutterForegroundTask.stopService();
     } catch (e) {
-      debugPrint('Foreground service stop failed: $e');
+      debugPrint('Foreground service stop failed: ${e.runtimeType}');
     }
   }
 

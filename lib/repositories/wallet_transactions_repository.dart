@@ -123,7 +123,9 @@ class WalletTransactionsRepository {
             : 'Withdrawal requested';
       case FirestorePaths.txTypeWithdrawalPaid:
       case 'withdrawal_debit':
-        return status.isNotEmpty ? 'Withdrawal $status' : 'Withdrawal processed';
+        return status.isNotEmpty
+            ? 'Withdrawal $status'
+            : 'Withdrawal processed';
       case FirestorePaths.txTypeWithdrawalRejected:
         return status.isNotEmpty ? 'Withdrawal $status' : 'Withdrawal rejected';
       case FirestorePaths.txTypeWithdrawalCancelled:
