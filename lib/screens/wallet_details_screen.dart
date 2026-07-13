@@ -1,10 +1,12 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 import '../core/constants/firestore_paths.dart';
 import '../core/constants/legal_links.dart';
+import '../core/theme/app_palette.dart';
 import '../core/theme/friendify_brand.dart';
 import '../repositories/call_repository.dart';
 import '../repositories/user_repository.dart';
@@ -353,7 +355,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     required List<Widget> children,
   }) {
     return Container(
-      decoration: FriendifyBrand.panelDecoration(),
+      decoration: AppPalette.cardDecoration(radius: 18),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
@@ -364,7 +366,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
               style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w900,
-                color: FriendifyBrand.pureWhite,
+                color: AppPalette.textPrimary,
               ),
             ),
             if (subtitle != null && subtitle.trim().isNotEmpty) ...[
@@ -372,7 +374,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
               Text(
                 subtitle,
                 style: const TextStyle(
-                  color: FriendifyBrand.softGrey,
+                  color: AppPalette.textSecondary,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -388,7 +390,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
   Widget _rowLine({
     required String label,
     required String value,
-    Color valueColor = FriendifyBrand.pureWhite,
+    Color valueColor = AppPalette.textPrimary,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
@@ -398,7 +400,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
             child: Text(
               label,
               style: const TextStyle(
-                color: FriendifyBrand.softGrey,
+                color: AppPalette.textSecondary,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -420,8 +422,8 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     required String title,
     required String subtitle,
     required VoidCallback onTap,
-    Color iconColor = FriendifyBrand.lavenderGlow,
-    Color iconBg = const Color(0x332F176F),
+    Color iconColor = AppPalette.blue,
+    Color iconBg = AppPalette.blueTint,
   }) {
     return ListTile(
       contentPadding: EdgeInsets.zero,
@@ -433,13 +435,13 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
         title,
         style: const TextStyle(
           fontWeight: FontWeight.w900,
-          color: FriendifyBrand.pureWhite,
+          color: AppPalette.textPrimary,
         ),
       ),
       subtitle: Text(
         subtitle,
         style: const TextStyle(
-          color: FriendifyBrand.softGrey,
+          color: AppPalette.textSecondary,
           fontWeight: FontWeight.w600,
         ),
       ),
@@ -687,44 +689,47 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
       showDragHandle: true,
       isScrollControlled: true,
       builder: (sheetContext) {
-        return SafeArea(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              8,
-              16,
-              MediaQuery.of(sheetContext).viewInsets.bottom + 20,
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF111827),
+        return Theme(
+          data: AppPalette.lightSheetTheme(sheetContext),
+          child: SafeArea(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                8,
+                16,
+                MediaQuery.of(sheetContext).viewInsets.bottom + 20,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF111827),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    body,
-                    style: const TextStyle(
-                      color: Color(0xFF374151),
-                      fontWeight: FontWeight.w600,
-                      height: 1.45,
+                    const SizedBox(height: 12),
+                    Text(
+                      body,
+                      style: const TextStyle(
+                        color: Color(0xFF374151),
+                        fontWeight: FontWeight.w600,
+                        height: 1.45,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 18),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: () => Navigator.of(sheetContext).pop(),
-                      child: const Text('Close'),
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: () => Navigator.of(sheetContext).pop(),
+                        child: const Text('Close'),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -1197,8 +1202,11 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
         showDragHandle: true,
         isScrollControlled: true,
         builder: (sheetContext) {
-          return _WithdrawalRequestSheet(
-            me: me,
+          return Theme(
+            data: AppPalette.lightSheetTheme(sheetContext),
+            child: _WithdrawalRequestSheet(
+              me: me,
+            ),
           );
         },
       );
@@ -2155,7 +2163,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
         ),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: FriendifyBrand.lavenderGlow.withValues(alpha: 0.32),
+          color: Colors.white.withValues(alpha: 0.22),
         ),
         boxShadow: [
           BoxShadow(
@@ -2174,7 +2182,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                 Text(
                   'Your Balance',
                   style: TextStyle(
-                    color: FriendifyBrand.pureWhite.withValues(alpha: 0.78),
+                    color: Colors.white.withValues(alpha: 0.82),
                     fontSize: 14,
                     fontWeight: FontWeight.w800,
                   ),
@@ -2183,7 +2191,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                 Text(
                   _walletDisplayAmount(totalCredits, decimals: true),
                   style: const TextStyle(
-                    color: FriendifyBrand.pureWhite,
+                    color: Colors.white,
                     fontSize: 31,
                     fontWeight: FontWeight.w900,
                     letterSpacing: 0,
@@ -2198,8 +2206,8 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
             child: FilledButton(
               style: FilledButton.styleFrom(
                 padding: EdgeInsets.zero,
-                backgroundColor: const Color(0xFF993BEB),
-                foregroundColor: FriendifyBrand.pureWhite,
+                backgroundColor: Colors.white,
+                foregroundColor: AppPalette.blue,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -2230,7 +2238,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
         constraints: const BoxConstraints(minHeight: 78),
         padding: const EdgeInsets.fromLTRB(16, 15, 14, 15),
         decoration: BoxDecoration(
-          color: const Color(0xFF131B35),
+          color: AppPalette.feedBg,
           borderRadius: BorderRadius.circular(13),
           border: Border.all(
             color: FriendifyBrand.pureWhite.withValues(alpha: 0.05),
@@ -2289,7 +2297,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
             backgroundColor: Colors.transparent,
             disabledBackgroundColor: Colors.transparent,
             shadowColor: Colors.transparent,
-            foregroundColor: FriendifyBrand.pureWhite,
+            foregroundColor: Colors.white,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(999),
             ),
@@ -2356,32 +2364,18 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
           height: 40,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            gradient: selected ? FriendifyBrand.primaryGradient : null,
-            color: selected ? null : const Color(0xFF11182F),
+            color: selected ? AppPalette.blue : AppPalette.feedBg,
             borderRadius: BorderRadius.circular(999),
             border: Border.all(
-              color: selected
-                  ? FriendifyBrand.lavenderGlow.withValues(alpha: 0.22)
-                  : FriendifyBrand.pureWhite.withValues(alpha: 0.055),
+              color: selected ? AppPalette.blue : AppPalette.border,
             ),
-            boxShadow: selected
-                ? [
-                    BoxShadow(
-                      color: FriendifyBrand.softViolet.withValues(alpha: 0.22),
-                      blurRadius: 14,
-                      offset: const Offset(0, 8),
-                    ),
-                  ]
-                : null,
           ),
           child: Text(
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: selected
-                  ? FriendifyBrand.pureWhite
-                  : FriendifyBrand.pureWhite.withValues(alpha: 0.68),
+              color: selected ? Colors.white : AppPalette.textSecondary,
               fontWeight: FontWeight.w900,
               fontSize: 13,
             ),
@@ -2402,13 +2396,13 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
       return Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: const Color(0xFF131B35),
+          color: AppPalette.feedBg,
           borderRadius: BorderRadius.circular(14),
         ),
         child: Text(
           emptyText,
-          style: TextStyle(
-            color: FriendifyBrand.pureWhite.withValues(alpha: 0.70),
+          style: const TextStyle(
+            color: AppPalette.textSecondary,
             fontWeight: FontWeight.w800,
           ),
         ),
@@ -2446,10 +2440,10 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: BoxDecoration(
-        color: const Color(0xFF131B35),
+        color: AppPalette.feedBg,
         borderRadius: BorderRadius.circular(13),
         border: Border.all(
-          color: FriendifyBrand.pureWhite.withValues(alpha: 0.045),
+          color: AppPalette.border,
         ),
       ),
       child: Row(
@@ -2465,7 +2459,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: FriendifyBrand.pureWhite,
+                    color: AppPalette.textPrimary,
                     fontWeight: FontWeight.w900,
                     fontSize: 14,
                   ),
@@ -2475,8 +2469,8 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                   _dateTimeLabel(createdAt),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: FriendifyBrand.pureWhite.withValues(alpha: 0.55),
+                  style: const TextStyle(
+                    color: AppPalette.textMuted,
                     fontWeight: FontWeight.w700,
                     fontSize: 12,
                   ),
@@ -2487,8 +2481,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
           Text(
             signed,
             style: TextStyle(
-              color:
-                  positive ? FriendifyBrand.mintGreen : FriendifyBrand.danger,
+              color: positive ? AppPalette.online : const Color(0xFFDC2626),
               fontWeight: FontWeight.w900,
               fontSize: 14,
             ),
@@ -2517,12 +2510,13 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
       height: 42,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: positive ? FriendifyBrand.primaryGradient : null,
-        color: positive ? null : const Color(0xFF2A1938),
+        color: positive
+            ? AppPalette.online.withValues(alpha: 0.15)
+            : const Color(0xFFDC2626).withValues(alpha: 0.12),
       ),
       child: Icon(
         icon,
-        color: FriendifyBrand.pureWhite,
+        color: positive ? AppPalette.online : const Color(0xFFDC2626),
         size: 21,
       ),
     );
@@ -2559,7 +2553,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
         child: Text(
           name.characters.first.toUpperCase(),
           style: TextStyle(
-            color: FriendifyBrand.pureWhite,
+            color: Colors.white,
             fontSize: size * 0.40,
             fontWeight: FontWeight.w900,
           ),
@@ -2572,9 +2566,9 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: FriendifyBrand.primaryGradient,
+        color: AppPalette.blue,
         border: Border.all(
-          color: FriendifyBrand.lavenderGlow.withValues(alpha: 0.32),
+          color: AppPalette.border,
           width: 2,
         ),
       ),
@@ -2595,36 +2589,36 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
       controller: _callsSearchController,
       onChanged: (_) => setState(() {}),
       style: const TextStyle(
-        color: FriendifyBrand.pureWhite,
+        color: AppPalette.textPrimary,
         fontWeight: FontWeight.w800,
       ),
       decoration: InputDecoration(
         hintText: 'Search call-ready listeners...',
-        hintStyle: TextStyle(
-          color: FriendifyBrand.pureWhite.withValues(alpha: 0.46),
+        hintStyle: const TextStyle(
+          color: AppPalette.textMuted,
           fontWeight: FontWeight.w800,
         ),
-        prefixIcon: Icon(
+        prefixIcon: const Icon(
           Icons.search_rounded,
-          color: FriendifyBrand.pureWhite.withValues(alpha: 0.62),
+          color: AppPalette.textMuted,
         ),
         filled: true,
-        fillColor: const Color(0xFF161B35),
+        fillColor: AppPalette.feedBg,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 14,
           vertical: 12,
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(15),
-          borderSide: BorderSide(
-            color: FriendifyBrand.lavenderGlow.withValues(alpha: 0.30),
+          borderSide: const BorderSide(
+            color: AppPalette.border,
             width: 1.2,
           ),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(15),
-          borderSide: BorderSide(
-            color: FriendifyBrand.lavenderGlow.withValues(alpha: 0.78),
+          borderSide: const BorderSide(
+            color: AppPalette.blue,
             width: 1.4,
           ),
         ),
@@ -2637,7 +2631,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
       child: Text(
         'Calls',
         style: TextStyle(
-          color: FriendifyBrand.pureWhite,
+          color: AppPalette.textPrimary,
           fontSize: 24,
           fontWeight: FontWeight.w900,
           letterSpacing: 0,
@@ -2663,8 +2657,8 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
               child: FilledButton(
                 style: FilledButton.styleFrom(
                   padding: EdgeInsets.zero,
-                  backgroundColor: const Color(0xFF993BEB),
-                  foregroundColor: FriendifyBrand.pureWhite,
+                  backgroundColor: AppPalette.blue,
+                  foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -2694,7 +2688,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
             title: 'History',
             trailing: const Icon(
               Icons.chevron_right_rounded,
-              color: FriendifyBrand.pureWhite,
+              color: AppPalette.textMuted,
             ),
             onTap: _openCallHistory,
           ),
@@ -2716,15 +2710,15 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
         constraints: const BoxConstraints(minHeight: 64),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: const Color(0xFF131B35),
+          color: AppPalette.feedBg,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: FriendifyBrand.pureWhite.withValues(alpha: 0.06),
+            color: AppPalette.border,
           ),
         ),
         child: Row(
           children: [
-            Icon(icon, color: FriendifyBrand.lavenderGlow, size: 22),
+            Icon(icon, color: AppPalette.blue, size: 22),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -2732,7 +2726,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  color: FriendifyBrand.pureWhite,
+                  color: AppPalette.textPrimary,
                   fontWeight: FontWeight.w900,
                   fontSize: 14.5,
                 ),
@@ -2875,7 +2869,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
 
                 return Container(
                   decoration: const BoxDecoration(
-                    color: FriendifyBrand.deepIndigo,
+                    color: AppPalette.card,
                     borderRadius:
                         BorderRadius.vertical(top: Radius.circular(24)),
                   ),
@@ -2892,8 +2886,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                           width: 48,
                           height: 5,
                           decoration: BoxDecoration(
-                            color: FriendifyBrand.pureWhite
-                                .withValues(alpha: 0.22),
+                            color: AppPalette.textMuted.withValues(alpha: 0.4),
                             borderRadius: BorderRadius.circular(999),
                           ),
                         ),
@@ -2914,8 +2907,8 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                                 : () =>
                                     _requestWithdrawalSheet(sheetContext, me),
                             colors: const [
+                              Color(0xFF2F6FED),
                               Color(0xFF225CFF),
-                              Color(0xFF6F35E8),
                             ],
                           ),
                           const SizedBox(width: 10),
@@ -2925,8 +2918,8 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                                 ? null
                                 : () => _startTopup(amount: 500, me: me),
                             colors: const [
-                              Color(0xFF7A35EC),
-                              Color(0xFFB13CFF),
+                              Color(0xFF3D7BF0),
+                              Color(0xFF6AA0F7),
                             ],
                           ),
                         ],
@@ -2942,7 +2935,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                       Text(
                         _statementTitleForFilter(sheetFilter),
                         style: const TextStyle(
-                          color: FriendifyBrand.pureWhite,
+                          color: AppPalette.textPrimary,
                           fontSize: 18,
                           fontWeight: FontWeight.w900,
                         ),
@@ -3013,10 +3006,10 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        const Text(
           'Call-ready people',
           style: TextStyle(
-            color: FriendifyBrand.pureWhite.withValues(alpha: 0.78),
+            color: AppPalette.textSecondary,
             fontSize: 15,
             fontWeight: FontWeight.w900,
           ),
@@ -3091,10 +3084,10 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
       child: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: const Color(0xFF151B35),
+          color: AppPalette.card,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: FriendifyBrand.lavenderGlow.withValues(alpha: 0.16),
+            color: AppPalette.border,
           ),
         ),
         child: Row(
@@ -3110,7 +3103,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      color: FriendifyBrand.pureWhite,
+                      color: AppPalette.textPrimary,
                       fontWeight: FontWeight.w900,
                       fontSize: 15.5,
                     ),
@@ -3120,14 +3113,14 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                     spacing: 5,
                     runSpacing: 5,
                     children: [
-                      _statusPill('Rs $rate/min', FriendifyBrand.lavenderGlow),
+                      _statusPill('Rs $rate/min', AppPalette.blue),
                       _statusPill(
                         readiness.label,
                         callReady
-                            ? FriendifyBrand.mintGreen
+                            ? AppPalette.online
                             : readiness.reason.contains('credit')
-                                ? FriendifyBrand.warning
-                                : FriendifyBrand.lavenderGlow,
+                                ? const Color(0xFFF59E0B)
+                                : AppPalette.blue,
                       ),
                     ],
                   ),
@@ -3136,8 +3129,8 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                     statText,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: FriendifyBrand.pureWhite.withValues(alpha: 0.52),
+                    style: const TextStyle(
+                      color: AppPalette.textMuted,
                       fontSize: 10.5,
                       fontWeight: FontWeight.w800,
                     ),
@@ -3151,11 +3144,11 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
               child: FilledButton.icon(
                 style: FilledButton.styleFrom(
                   padding: const EdgeInsets.symmetric(horizontal: 10),
-                  backgroundColor: callReady
-                      ? const Color(0xFF6C2EFF)
-                      : const Color(0xFF1A2038),
-                  disabledBackgroundColor: const Color(0xFF1A2038),
-                  foregroundColor: FriendifyBrand.pureWhite,
+                  backgroundColor:
+                      callReady ? AppPalette.blue : AppPalette.feedBg,
+                  disabledBackgroundColor: AppPalette.feedBg,
+                  foregroundColor: Colors.white,
+                  disabledForegroundColor: AppPalette.textMuted,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -3206,25 +3199,25 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFF131B35),
+        color: AppPalette.feedBg,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: FriendifyBrand.pureWhite.withValues(alpha: 0.06),
+          color: AppPalette.border,
         ),
       ),
       child: Column(
         children: [
           const Icon(
             Icons.call_outlined,
-            color: FriendifyBrand.lavenderGlow,
+            color: AppPalette.blue,
             size: 30,
           ),
           const SizedBox(height: 10),
           Text(
             text,
             textAlign: TextAlign.center,
-            style: TextStyle(
-              color: FriendifyBrand.pureWhite.withValues(alpha: 0.68),
+            style: const TextStyle(
+              color: AppPalette.textSecondary,
               fontWeight: FontWeight.w800,
               height: 1.35,
             ),
@@ -3244,10 +3237,10 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(
-        color: FriendifyBrand.warning.withValues(alpha: 0.08),
+        color: const Color(0xFFF59E0B).withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: FriendifyBrand.warning.withValues(alpha: 0.22),
+          color: const Color(0xFFF59E0B).withValues(alpha: 0.28),
         ),
       ),
       child: Row(
@@ -3255,7 +3248,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
         children: [
           const Icon(
             Icons.sync_problem_rounded,
-            color: FriendifyBrand.warning,
+            color: Color(0xFFD97706),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -3265,15 +3258,15 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                 Text(
                   title,
                   style: const TextStyle(
-                    color: FriendifyBrand.pureWhite,
+                    color: AppPalette.textPrimary,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   message,
-                  style: TextStyle(
-                    color: FriendifyBrand.pureWhite.withValues(alpha: 0.66),
+                  style: const TextStyle(
+                    color: AppPalette.textSecondary,
                     fontWeight: FontWeight.w700,
                     height: 1.35,
                   ),
@@ -3301,143 +3294,150 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
   Widget build(BuildContext context) {
     final walletRepository = WalletRepository.instance;
 
-    return Scaffold(
-      backgroundColor: FriendifyBrand.deepIndigo,
-      body: DecoratedBox(
-        decoration: FriendifyBrand.brandedBackground(),
-        child: StreamBuilder<AppUserModel?>(
-          key: ValueKey('wallet_user_$_walletRetryToken'),
-          stream: walletRepository.watchMyWallet(),
-          builder: (_, userSnap) {
-            if (userSnap.hasError) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: _callsWarningCard(
-                    title: 'Wallet unavailable',
-                    message:
-                        'Your account and wallet state could not sync. Check your connection and try again.',
-                    actionLabel: 'Retry',
-                    onAction: _retryWalletLoad,
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+        statusBarBrightness: Brightness.light,
+      ),
+      child: Scaffold(
+        backgroundColor: AppPalette.pageBg,
+        body: DecoratedBox(
+          decoration: const BoxDecoration(color: AppPalette.pageBg),
+          child: StreamBuilder<AppUserModel?>(
+            key: ValueKey('wallet_user_$_walletRetryToken'),
+            stream: walletRepository.watchMyWallet(),
+            builder: (_, userSnap) {
+              if (userSnap.hasError) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: _callsWarningCard(
+                      title: 'Wallet unavailable',
+                      message:
+                          'Your account and wallet state could not sync. Check your connection and try again.',
+                      actionLabel: 'Retry',
+                      onAction: _retryWalletLoad,
+                    ),
                   ),
-                ),
-              );
-            }
-
-            if (userSnap.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            final me = userSnap.data;
-            if (me == null) {
-              return const Center(
-                child: Text(
-                  'Unable to load calls right now.',
-                  style: TextStyle(color: FriendifyBrand.pureWhite),
-                ),
-              );
-            }
-
-            return StreamBuilder<List<Map<String, dynamic>>>(
-              key: ValueKey('wallet_ledger_$_ledgerRetryToken'),
-              stream: walletRepository.watchMyTransactions(limit: 60),
-              builder: (_, ledgerSnap) {
-                final ledgerDocs =
-                    ledgerSnap.data ?? const <Map<String, dynamic>>[];
-
-                return StreamBuilder<List<AppUserModel>>(
-                  key: ValueKey('wallet_listeners_$_callReadyRetryToken'),
-                  stream: _userRepository.watchAvailableListeners(limit: 200),
-                  builder: (_, listenersSnap) {
-                    final listeners =
-                        listenersSnap.data ?? const <AppUserModel>[];
-
-                    return StreamBuilder<List<Map<String, dynamic>>>(
-                      key: ValueKey('wallet_sessions_$_callReadyRetryToken'),
-                      stream: _callRepository.watchCurrentUserChatSessions(
-                        limit: 100,
-                      ),
-                      builder: (_, sessionsSnap) {
-                        final chatSessions =
-                            sessionsSnap.data ?? const <Map<String, dynamic>>[];
-                        final loadingCalls = (listenersSnap.connectionState ==
-                                    ConnectionState.waiting &&
-                                listeners.isEmpty) ||
-                            (sessionsSnap.connectionState ==
-                                    ConnectionState.waiting &&
-                                chatSessions.isEmpty);
-                        final ledgerLoadError = ledgerSnap.hasError;
-                        final listenersLoadError = listenersSnap.hasError;
-                        final sessionsLoadError = sessionsSnap.hasError;
-                        final callsLoadError =
-                            listenersLoadError || sessionsLoadError;
-
-                        return ListView(
-                          padding: FriendifyBrand.screenPadding(
-                            context,
-                            top: 18,
-                            bottom: 104,
-                          ),
-                          children: [
-                            SafeArea(
-                              bottom: false,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _callsTopBar(),
-                                  const SizedBox(height: 12),
-                                  _callsSearchBar(),
-                                  const SizedBox(height: 12),
-                                  _callsActionTiles(
-                                    me: me,
-                                    walletRepository: walletRepository,
-                                    ledgerDocs: ledgerDocs,
-                                  ),
-                                  if (ledgerLoadError) ...[
-                                    const SizedBox(height: 12),
-                                    _callsWarningCard(
-                                      title: 'Wallet history sync issue',
-                                      message:
-                                          'Balance is shown from your account record, but recent transactions could not refresh.',
-                                      actionLabel: 'Retry history',
-                                      onAction: _retryLedgerLoad,
-                                    ),
-                                  ],
-                                  const SizedBox(height: 14),
-                                  if (callsLoadError)
-                                    _callsWarningCard(
-                                      title: 'Call-ready list unavailable',
-                                      message: listenersLoadError
-                                          ? 'Listener profiles could not load. Your accepted call list may be incomplete.'
-                                          : 'Accepted chat sessions could not load. Try again when the connection settles.',
-                                      actionLabel: 'Retry calls',
-                                      onAction: _retryCallReadyLoad,
-                                    )
-                                  else if (loadingCalls)
-                                    const Center(
-                                      child: Padding(
-                                        padding: EdgeInsets.all(20),
-                                        child: CircularProgressIndicator(),
-                                      ),
-                                    )
-                                  else
-                                    _callReadySection(
-                                      me: me,
-                                      listeners: listeners,
-                                      chatSessions: chatSessions,
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    );
-                  },
                 );
-              },
-            );
-          },
+              }
+
+              if (userSnap.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              final me = userSnap.data;
+              if (me == null) {
+                return const Center(
+                  child: Text(
+                    'Unable to load calls right now.',
+                    style: TextStyle(color: AppPalette.textPrimary),
+                  ),
+                );
+              }
+
+              return StreamBuilder<List<Map<String, dynamic>>>(
+                key: ValueKey('wallet_ledger_$_ledgerRetryToken'),
+                stream: walletRepository.watchMyTransactions(limit: 60),
+                builder: (_, ledgerSnap) {
+                  final ledgerDocs =
+                      ledgerSnap.data ?? const <Map<String, dynamic>>[];
+
+                  return StreamBuilder<List<AppUserModel>>(
+                    key: ValueKey('wallet_listeners_$_callReadyRetryToken'),
+                    stream: _userRepository.watchAvailableListeners(limit: 200),
+                    builder: (_, listenersSnap) {
+                      final listeners =
+                          listenersSnap.data ?? const <AppUserModel>[];
+
+                      return StreamBuilder<List<Map<String, dynamic>>>(
+                        key: ValueKey('wallet_sessions_$_callReadyRetryToken'),
+                        stream: _callRepository.watchCurrentUserChatSessions(
+                          limit: 100,
+                        ),
+                        builder: (_, sessionsSnap) {
+                          final chatSessions = sessionsSnap.data ??
+                              const <Map<String, dynamic>>[];
+                          final loadingCalls = (listenersSnap.connectionState ==
+                                      ConnectionState.waiting &&
+                                  listeners.isEmpty) ||
+                              (sessionsSnap.connectionState ==
+                                      ConnectionState.waiting &&
+                                  chatSessions.isEmpty);
+                          final ledgerLoadError = ledgerSnap.hasError;
+                          final listenersLoadError = listenersSnap.hasError;
+                          final sessionsLoadError = sessionsSnap.hasError;
+                          final callsLoadError =
+                              listenersLoadError || sessionsLoadError;
+
+                          return ListView(
+                            padding: FriendifyBrand.screenPadding(
+                              context,
+                              top: 18,
+                              bottom: 104,
+                            ),
+                            children: [
+                              SafeArea(
+                                bottom: false,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _callsTopBar(),
+                                    const SizedBox(height: 12),
+                                    _callsSearchBar(),
+                                    const SizedBox(height: 12),
+                                    _callsActionTiles(
+                                      me: me,
+                                      walletRepository: walletRepository,
+                                      ledgerDocs: ledgerDocs,
+                                    ),
+                                    if (ledgerLoadError) ...[
+                                      const SizedBox(height: 12),
+                                      _callsWarningCard(
+                                        title: 'Wallet history sync issue',
+                                        message:
+                                            'Balance is shown from your account record, but recent transactions could not refresh.',
+                                        actionLabel: 'Retry history',
+                                        onAction: _retryLedgerLoad,
+                                      ),
+                                    ],
+                                    const SizedBox(height: 14),
+                                    if (callsLoadError)
+                                      _callsWarningCard(
+                                        title: 'Call-ready list unavailable',
+                                        message: listenersLoadError
+                                            ? 'Listener profiles could not load. Your accepted call list may be incomplete.'
+                                            : 'Accepted chat sessions could not load. Try again when the connection settles.',
+                                        actionLabel: 'Retry calls',
+                                        onAction: _retryCallReadyLoad,
+                                      )
+                                    else if (loadingCalls)
+                                      const Center(
+                                        child: Padding(
+                                          padding: EdgeInsets.all(20),
+                                          child: CircularProgressIndicator(),
+                                        ),
+                                      )
+                                    else
+                                      _callReadySection(
+                                        me: me,
+                                        listeners: listeners,
+                                        chatSessions: chatSessions,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      );
+                    },
+                  );
+                },
+              );
+            },
+          ),
         ),
       ),
     );
@@ -3510,8 +3510,8 @@ class _WithdrawalRequestSheetState extends State<_WithdrawalRequestSheet> {
     final ifsc = _ifscController.text.trim();
     final bankName = _bankNameController.text.trim();
     if (holder.isEmpty || account.isEmpty || ifsc.isEmpty) {
-      setState(() => _error =
-          'Enter account holder name, account number, and IFSC code.');
+      setState(() =>
+          _error = 'Enter account holder name, account number, and IFSC code.');
       return null;
     }
     return {
