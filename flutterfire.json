@@ -1,0 +1,19 @@
+{
+  "platforms": {
+    "android": {
+      "default": {
+        "projectId": "friendify-ef682",
+        "appId": "1:481804518660:android:75aebf0ed8f7d24799fc51",
+        "fileOutput": "android/app/google-services.json"
+      }
+    },
+    "dart": {
+      "lib/firebase_options.dart": {
+        "projectId": "friendify-ef682",
+        "configurations": {
+          "android": "1:481804518660:android:75aebf0ed8f7d24799fc51"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Friendify app icon">
+  <defs>
+    <linearGradient id="bubble" x1="92" y1="86" x2="906" y2="910" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#D83CD7"/>
+      <stop offset="0.48" stop-color="#6C35FF"/>
+      <stop offset="1" stop-color="#081F78"/>
+    </linearGradient>
+    <linearGradient id="heart" x1="610" y1="276" x2="872" y2="620" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFB1DE"/>
+      <stop offset="0.48" stop-color="#FF72C8"/>
+      <stop offset="1" stop-color="#9E75FF"/>
+    </linearGradient>
+  </defs>
+
+  <path d="M166 86h604c86 0 156 70 156 156v394c0 86-70 156-156 156H520L319 932c-28 20-67 0-67-35V792h-86C80 792 10 722 10 636V242C10 156 80 86 166 86z" fill="url(#bubble)"/>
+  <path d="M14 477h266c36 0 65 29 65 65s-29 65-65 65H14z" fill="#F8F2FF"/>
+  <path d="M188 542h122l54-108 82 220 62-178 52 88h82" fill="none" stroke="#D8CAFF" stroke-width="52" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M188 542h122l54-108 82 220 62-178 52 88h82" fill="none" stroke="#FFF8FF" stroke-width="27" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M724 321c-51-78-175-46-180 54-6 100 114 165 184 242 72-75 193-142 185-242-8-100-135-131-189-54z" fill="url(#heart)"/>
+  <path d="M724 321c-51-78-175-46-180 54-6 100 114 165 184 242 72-75 193-142 185-242-8-100-135-131-189-54z" fill="#FFFFFF" opacity="0.16"/>
+</svg>
