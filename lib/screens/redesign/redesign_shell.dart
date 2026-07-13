@@ -9,12 +9,15 @@ import '../../shared/models/app_user_model.dart';
 import '../../shared/models/social_post_model.dart';
 import '../call_history_screen.dart';
 import '../chat_conversation_screen.dart';
+import '../earnings_screen.dart';
 import '../help_support_screen.dart';
 import '../listener_profile_screen.dart';
 import '../match_and_call_screen.dart';
+import '../notifications_center_screen.dart';
 import '../post_detail_screen.dart';
 import '../profile_screen.dart';
 import '../wallet_details_screen.dart';
+import 'blocked_users_screen.dart';
 
 /// Phase 1 of the redesign: the new 5-tab shell + light-blue theme.
 /// Discover is built out to match the agreed direction; the other tabs are
@@ -126,7 +129,8 @@ class _BottomNav extends StatelessWidget {
               color: AppPalette.blue,
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.phone_rounded, color: Colors.white, size: 24),
+            child:
+                const Icon(Icons.phone_rounded, color: Colors.white, size: 24),
           ),
         ),
       ),
@@ -284,13 +288,12 @@ class _DiscoverPageState extends State<_DiscoverPage> {
                   SizedBox(height: 3),
                   Text(
                     "someone's here for you 🌙",
-                    style:
-                        TextStyle(fontSize: 13, color: AppPalette.textSecondary),
+                    style: TextStyle(
+                        fontSize: 13, color: AppPalette.textSecondary),
                   ),
                 ],
               ),
-              Icon(Icons.search_rounded,
-                  color: AppPalette.textMuted, size: 22),
+              Icon(Icons.search_rounded, color: AppPalette.textMuted, size: 22),
             ],
           ),
           const SizedBox(height: 12),
@@ -368,7 +371,8 @@ class _ListenerCard extends StatelessWidget {
             const SizedBox(height: 2),
             Row(
               children: [
-                const Icon(Icons.star_rounded, size: 14, color: AppPalette.star),
+                const Icon(Icons.star_rounded,
+                    size: 14, color: AppPalette.star),
                 const SizedBox(width: 3),
                 Expanded(
                   child: Text(
@@ -526,11 +530,18 @@ class _MePageState extends State<_MePage> {
               const SizedBox(height: 20),
               _menuRow(Icons.person_outline_rounded, 'Edit profile',
                   () => _open(const ProfileScreen())),
-              _menuRow(Icons.account_balance_wallet_outlined,
+              _menuRow(Icons.notifications_none_rounded, 'Notifications',
+                  () => _open(const NotificationsCenterScreen())),
+              _menuRow(
+                  Icons.account_balance_wallet_outlined,
                   'Wallet and transactions',
                   () => _open(const WalletDetailsScreen())),
+              _menuRow(Icons.payments_outlined, 'Earnings and safety',
+                  () => _open(const EarningsScreen())),
               _menuRow(Icons.access_time_rounded, 'Call history',
                   () => _open(const CallHistoryScreen())),
+              _menuRow(Icons.block_rounded, 'Blocked users',
+                  () => _open(const BlockedUsersScreen())),
               _menuRow(Icons.help_outline_rounded, 'Help and support',
                   () => _open(const HelpSupportScreen())),
               _menuRow(Icons.logout_rounded, 'Log out', _logout, danger: true),
@@ -715,12 +726,12 @@ class _ChatsPageState extends State<_ChatsPage> {
                     ),
                   );
                 }
-                final sessions = (snapshot.data ??
-                        const <Map<String, dynamic>>[])
-                    .where((s) =>
-                        _str(s['speakerId']).isNotEmpty &&
-                        _str(s['listenerId']).isNotEmpty)
-                    .toList();
+                final sessions =
+                    (snapshot.data ?? const <Map<String, dynamic>>[])
+                        .where((s) =>
+                            _str(s['speakerId']).isNotEmpty &&
+                            _str(s['listenerId']).isNotEmpty)
+                        .toList();
                 if (sessions.isEmpty) {
                   return const _DiscoverMessage(
                     "No chats yet 🌙\n"
@@ -1095,13 +1106,26 @@ class _FeedPageState extends State<_FeedPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Feed',
-            style: TextStyle(
-              fontSize: 19,
-              fontWeight: FontWeight.w700,
-              color: AppPalette.textPrimary,
-            ),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Feed',
+                  style: TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w700,
+                    color: AppPalette.textPrimary,
+                  ),
+                ),
+              ),
+              _NotificationsBell(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const NotificationsCenterScreen(),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           InkWell(
@@ -1117,8 +1141,8 @@ class _FeedPageState extends State<_FeedPage> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
                       color: AppPalette.feedBg,
                       borderRadius: BorderRadius.circular(999),
@@ -1274,8 +1298,7 @@ class _FeedPostCardState extends State<_FeedPostCard> {
             ),
             Text(
               _timeAgo(_post.createdAtMs),
-              style:
-                  const TextStyle(fontSize: 12, color: AppPalette.textMuted),
+              style: const TextStyle(fontSize: 12, color: AppPalette.textMuted),
             ),
           ],
         ),
@@ -1297,8 +1320,8 @@ class _FeedPostCardState extends State<_FeedPostCard> {
                 borderRadius: BorderRadius.circular(999),
                 onTap: () => _toggleLike(liked),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   child: Row(
                     children: [
                       Icon(
@@ -1306,7 +1329,8 @@ class _FeedPostCardState extends State<_FeedPostCard> {
                             ? Icons.favorite_rounded
                             : Icons.favorite_border_rounded,
                         size: 22,
-                        color: liked ? AppPalette.rose : AppPalette.textSecondary,
+                        color:
+                            liked ? AppPalette.rose : AppPalette.textSecondary,
                       ),
                       if (_post.likeCount > 0) ...[
                         const SizedBox(width: 5),
@@ -1328,8 +1352,7 @@ class _FeedPostCardState extends State<_FeedPostCard> {
             borderRadius: BorderRadius.circular(999),
             onTap: _openDetail,
             child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
               child: Row(
                 children: [
                   const Icon(Icons.chat_bubble_outline_rounded,
@@ -1354,8 +1377,7 @@ class _FeedPostCardState extends State<_FeedPostCard> {
             style: FilledButton.styleFrom(
               backgroundColor: AppPalette.blue,
               foregroundColor: Colors.white,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
@@ -1420,6 +1442,63 @@ class _Avatar extends StatelessWidget {
   }
 }
 
+/// Bell icon with a live unread-count badge; opens the notifications center.
+class _NotificationsBell extends StatelessWidget {
+  const _NotificationsBell({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<int>(
+      stream: SocialRepository.instance.watchUnreadNotificationCount(),
+      builder: (context, snap) {
+        final unread = snap.data ?? 0;
+        return InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(6),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                const Icon(
+                  Icons.notifications_none_rounded,
+                  size: 24,
+                  color: AppPalette.textSecondary,
+                ),
+                if (unread > 0)
+                  Positioned(
+                    right: -4,
+                    top: -4,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 4, vertical: 1),
+                      constraints: const BoxConstraints(minWidth: 16),
+                      decoration: BoxDecoration(
+                        color: AppPalette.rose,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        unread > 99 ? '99+' : '$unread',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _OnlineDot extends StatelessWidget {
   const _OnlineDot();
   @override
@@ -1434,4 +1513,3 @@ class _OnlineDot extends StatelessWidget {
     );
   }
 }
-
