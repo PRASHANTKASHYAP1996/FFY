@@ -266,13 +266,34 @@ class _DiscoverPageState extends State<_DiscoverPage> {
   final Stream<List<AppUserModel>> _stream =
       UserRepository.instance.watchAvailableListeners();
 
-  List<AppUserModel> _applyMood(List<AppUserModel> listeners) {
+  /// True when a mood is picked that actually filters ('Just talk' has no
+  /// keywords, so it never narrows the list).
+  bool get _moodActive =>
+      _mood.isNotEmpty && (_moodKeywords[_mood]?.isNotEmpty ?? false);
+
+  bool _matchesMood(AppUserModel u) {
     final keywords = _moodKeywords[_mood] ?? const <String>[];
-    if (_mood.isEmpty || keywords.isEmpty) return listeners;
-    return listeners.where((u) {
-      final haystack = '${u.topics.join(' ')} ${u.bio}'.toLowerCase();
-      return keywords.any(haystack.contains);
-    }).toList(growable: false);
+    if (keywords.isEmpty) return true;
+    final haystack = '${u.topics.join(' ')} ${u.bio}'.toLowerCase();
+    return keywords.any(haystack.contains);
+  }
+
+  /// Moods re-order (best matches first) but never hide anyone, so the front
+  /// door always shows real people. Returns the ordered list + how many
+  /// actually matched the mood.
+  ({List<AppUserModel> ordered, int matchCount}) _orderByMood(
+    List<AppUserModel> all,
+  ) {
+    if (!_moodActive) return (ordered: all, matchCount: 0);
+    final matched = all.where(_matchesMood).toList(growable: false);
+    final matchedUids = matched.map((u) => u.uid).toSet();
+    return (
+      ordered: <AppUserModel>[
+        ...matched,
+        ...all.where((u) => !matchedUids.contains(u.uid)),
+      ],
+      matchCount: matched.length,
+    );
   }
 
   void _openProfile(AppUserModel user) {
@@ -330,12 +351,18 @@ class _DiscoverPageState extends State<_DiscoverPage> {
                     'Check back in a little while.',
                   );
                 }
-                final listeners = _applyMood(all);
-                if (listeners.isEmpty) {
-                  return _DiscoverMessage(
-                    'No one matches "$_mood" right now 🌙\n'
-                    'Tap the chip again to see everyone.',
-                  );
+                // Moods re-order but never empty the grid.
+                final result = _orderByMood(all);
+                final listeners = result.ordered;
+                final String statusText;
+                if (!_moodActive) {
+                  statusText = '${all.length} here for you now';
+                } else if (result.matchCount == 0) {
+                  statusText = "No one's tagged for \"$_mood\" yet — "
+                      'here are all ${all.length} available';
+                } else {
+                  statusText = '${result.matchCount} great for "$_mood" · '
+                      '${all.length} here now';
                 }
                 return SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
@@ -346,11 +373,13 @@ class _DiscoverPageState extends State<_DiscoverPage> {
                         children: [
                           const _OnlineDot(),
                           const SizedBox(width: 6),
-                          Text(
-                            '${listeners.length} here for you now',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: AppPalette.textSecondary,
+                          Expanded(
+                            child: Text(
+                              statusText,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: AppPalette.textSecondary,
+                              ),
                             ),
                           ),
                         ],
