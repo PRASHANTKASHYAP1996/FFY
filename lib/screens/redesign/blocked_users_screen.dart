@@ -15,15 +15,15 @@ class BlockedUsersScreen extends StatefulWidget {
 
 class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
   final Stream<AppUserModel?> _me = UserRepository.instance.watchMe();
-  final Map<String, AppUserModel?> _cache = <String, AppUserModel?>{};
+  // Future-cache: one shared fetch per uid, stable identity across rebuilds.
+  final Map<String, Future<AppUserModel?>> _userFutures =
+      <String, Future<AppUserModel?>>{};
   final Set<String> _working = <String>{};
 
-  Future<AppUserModel?> _resolve(String uid) async {
-    if (_cache.containsKey(uid)) return _cache[uid];
-    final user = await UserRepository.instance.getUser(uid);
-    _cache[uid] = user;
-    return user;
-  }
+  Future<AppUserModel?> _resolve(String uid) => _userFutures.putIfAbsent(
+        uid,
+        () => UserRepository.instance.getUser(uid),
+      );
 
   Future<void> _unblock(String uid) async {
     if (_working.contains(uid)) return;
@@ -102,7 +102,6 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
     final working = _working.contains(uid);
     return FutureBuilder<AppUserModel?>(
       future: _resolve(uid),
-      initialData: _cache[uid],
       builder: (context, snap) {
         final name = snap.data?.safeDisplayName ?? 'Friendify user';
         final photo = (snap.data?.photoURL ?? '').trim();

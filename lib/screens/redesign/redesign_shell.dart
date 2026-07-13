@@ -788,14 +788,16 @@ class _ChatsPageState extends State<_ChatsPage> {
   final Stream<List<Map<String, dynamic>>> _sessions =
       CallRepository.instance.watchCurrentUserChatSessions();
   final String _myUid = UserRepository.instance.myUidOrNull ?? '';
-  final Map<String, AppUserModel?> _cache = <String, AppUserModel?>{};
+  // Cache the Future itself: concurrent rows asking for the same uid share one
+  // fetch, and the stable Future identity stops FutureBuilder re-firing on
+  // every list rebuild.
+  final Map<String, Future<AppUserModel?>> _userFutures =
+      <String, Future<AppUserModel?>>{};
 
-  Future<AppUserModel?> _resolve(String uid) async {
-    if (_cache.containsKey(uid)) return _cache[uid];
-    final user = await UserRepository.instance.getUser(uid);
-    _cache[uid] = user;
-    return user;
-  }
+  Future<AppUserModel?> _resolve(String uid) => _userFutures.putIfAbsent(
+        uid,
+        () => UserRepository.instance.getUser(uid),
+      );
 
   String _str(dynamic v) => v is String ? v : '';
   int _int(dynamic v) => v is num ? v.toInt() : 0;
@@ -892,7 +894,6 @@ class _ChatsPageState extends State<_ChatsPage> {
 
     return FutureBuilder<AppUserModel?>(
       future: _resolve(otherUid),
-      initialData: _cache[otherUid],
       builder: (context, snap) {
         final other = snap.data;
         final name = other?.safeDisplayName ?? 'Someone';
@@ -1175,6 +1176,10 @@ class _FeedPageState extends State<_FeedPage> {
         stream: _me,
         builder: (context, meSnap) {
           final me = meSnap.data;
+          // While the profile is still loading we don't know who is followed,
+          // so keep showing the spinner instead of a false "quiet feed".
+          final meLoading =
+              me == null && meSnap.connectionState == ConnectionState.waiting;
           final myUid = me?.uid ?? '';
           final following = me?.following ?? const <String>[];
           return Column(
@@ -1185,8 +1190,9 @@ class _FeedPageState extends State<_FeedPage> {
                 child: StreamBuilder<List<SocialPostModel>>(
                   stream: _posts,
                   builder: (context, snap) {
-                    if (snap.connectionState == ConnectionState.waiting &&
-                        !snap.hasData) {
+                    if (meLoading ||
+                        (snap.connectionState == ConnectionState.waiting &&
+                            !snap.hasData)) {
                       return const Center(
                         child: SizedBox(
                           width: 26,
@@ -1212,8 +1218,13 @@ class _FeedPageState extends State<_FeedPage> {
                     return ListView.builder(
                       padding: const EdgeInsets.only(top: 10, bottom: 24),
                       itemCount: visible.length,
-                      itemBuilder: (context, i) =>
-                          _FeedPostCard(post: visible[i]),
+                      // Keyed by postId so card state (like override, liked
+                      // stream) never carries over to a different post when
+                      // the list shifts.
+                      itemBuilder: (context, i) => _FeedPostCard(
+                        key: ValueKey(visible[i].postId),
+                        post: visible[i],
+                      ),
                     );
                   },
                 ),
@@ -1291,7 +1302,7 @@ class _FeedPageState extends State<_FeedPage> {
 }
 
 class _FeedPostCard extends StatefulWidget {
-  const _FeedPostCard({required this.post});
+  const _FeedPostCard({super.key, required this.post});
   final SocialPostModel post;
 
   @override
@@ -1302,6 +1313,11 @@ class _FeedPostCardState extends State<_FeedPostCard> {
   final SocialRepository _social = SocialRepository.instance;
   bool? _likedOverride;
   bool _busy = false;
+
+  // Created once per card (cards are keyed by postId): recreating the stream
+  // on every rebuild would resubscribe the listener and flicker the heart.
+  late final Stream<bool> _likedStream =
+      _social.watchPostLikedByMe(widget.post.postId);
 
   SocialPostModel get _post => widget.post;
 
@@ -1439,9 +1455,14 @@ class _FeedPostCardState extends State<_FeedPostCard> {
       child: Row(
         children: [
           StreamBuilder<bool>(
-            stream: _social.watchPostLikedByMe(_post.postId),
+            stream: _likedStream,
             builder: (context, snap) {
               final serverLiked = snap.data ?? false;
+              // Once the server confirms the optimistic value, drop the
+              // override so later changes (e.g. from another device) show.
+              if (!_busy && snap.hasData && _likedOverride == serverLiked) {
+                _likedOverride = null;
+              }
               final liked = _likedOverride ?? serverLiked;
               return InkWell(
                 borderRadius: BorderRadius.circular(999),
@@ -1570,20 +1591,30 @@ class _Avatar extends StatelessWidget {
 }
 
 /// Bell icon with a live unread-count badge; opens the notifications center.
-class _NotificationsBell extends StatelessWidget {
+class _NotificationsBell extends StatefulWidget {
   const _NotificationsBell({required this.onTap});
 
   final VoidCallback onTap;
 
   @override
+  State<_NotificationsBell> createState() => _NotificationsBellState();
+}
+
+class _NotificationsBellState extends State<_NotificationsBell> {
+  // Created once: recreating the stream on every rebuild would resubscribe
+  // the Firestore listener and flicker the badge.
+  final Stream<int> _unread =
+      SocialRepository.instance.watchUnreadNotificationCount();
+
+  @override
   Widget build(BuildContext context) {
     return StreamBuilder<int>(
-      stream: SocialRepository.instance.watchUnreadNotificationCount(),
+      stream: _unread,
       builder: (context, snap) {
         final unread = snap.data ?? 0;
         return InkWell(
           borderRadius: BorderRadius.circular(999),
-          onTap: onTap,
+          onTap: widget.onTap,
           child: Padding(
             padding: const EdgeInsets.all(6),
             child: Stack(
