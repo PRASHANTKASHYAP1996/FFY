@@ -11,6 +11,7 @@ import '../call_history_screen.dart';
 import '../chat_conversation_screen.dart';
 import '../help_support_screen.dart';
 import '../listener_profile_screen.dart';
+import '../match_and_call_screen.dart';
 import '../post_detail_screen.dart';
 import '../profile_screen.dart';
 import '../wallet_details_screen.dart';
@@ -31,11 +32,7 @@ class _RedesignShellState extends State<RedesignShell> {
   static const List<Widget> _pages = <Widget>[
     _DiscoverPage(),
     _ChatsPage(),
-    _PlaceholderPage(
-      icon: Icons.phone_rounded,
-      title: 'Call',
-      subtitle: 'Quick match and your call history.',
-    ),
+    _CallPage(),
     _FeedPage(),
     _MePage(),
   ];
@@ -858,6 +855,144 @@ class _ChatsPageState extends State<_ChatsPage> {
 }
 
 // ---------------------------------------------------------------------------
+// Call (the primary action — fast path into a match + call)
+// ---------------------------------------------------------------------------
+
+class _CallPage extends StatelessWidget {
+  const _CallPage();
+
+  void _talkNow(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const MatchAndCallScreen()),
+    );
+  }
+
+  void _history(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const CallHistoryScreen()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Spacer(flex: 2),
+            Center(
+              child: Container(
+                width: 96,
+                height: 96,
+                decoration: const BoxDecoration(
+                  color: AppPalette.blueTint,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.headset_mic_rounded,
+                    color: AppPalette.blue, size: 44),
+              ),
+            ),
+            const SizedBox(height: 22),
+            const Text(
+              'Need to talk?',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                color: AppPalette.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              "Someone's ready to listen — privately, just the two of you.",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.45,
+                color: AppPalette.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 26),
+            SizedBox(
+              height: 54,
+              child: FilledButton.icon(
+                onPressed: () => _talkNow(context),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppPalette.blue,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                icon: const Icon(Icons.phone_rounded, size: 20),
+                label: const Text(
+                  'Talk now',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 50,
+              child: OutlinedButton.icon(
+                onPressed: () => _history(context),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppPalette.textPrimary,
+                  side: const BorderSide(color: AppPalette.border),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                icon: const Icon(Icons.access_time_rounded,
+                    size: 18, color: AppPalette.textSecondary),
+                label: const Text(
+                  'Call history',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+            const Spacer(flex: 3),
+            const Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _CallTag('Private'),
+                _CallTag('1-on-1'),
+                _CallTag('Judgment-free'),
+              ],
+            ),
+            const SizedBox(height: 6),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CallTag extends StatelessWidget {
+  const _CallTag(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppPalette.feedBg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(fontSize: 11.5, color: AppPalette.textMuted),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Feed (posts from people you follow — every post routes back to a call)
 // ---------------------------------------------------------------------------
 
@@ -1300,71 +1435,3 @@ class _OnlineDot extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Placeholder tabs (real screens land in later phases)
-// ---------------------------------------------------------------------------
-
-class _PlaceholderPage extends StatelessWidget {
-  const _PlaceholderPage({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 68,
-              height: 68,
-              decoration: const BoxDecoration(
-                color: AppPalette.blueTint,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: AppPalette.blue, size: 30),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: AppPalette.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 40),
-              child: Text(
-                subtitle,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontSize: 13, color: AppPalette.textSecondary),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-              decoration: BoxDecoration(
-                color: AppPalette.feedBg,
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: const Text(
-                'Coming in the next phase',
-                style: TextStyle(fontSize: 11, color: AppPalette.textMuted),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
