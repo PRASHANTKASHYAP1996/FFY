@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../core/theme/app_palette.dart';
 import '../repositories/history_repository.dart';
 import '../services/call_session_manager.dart';
 import 'voice_call_screen.dart';
@@ -14,51 +16,36 @@ class CallHistoryScreen extends StatelessWidget {
     required bool isShortAnswered,
   }) {
     if (isMissed) return const Color(0xFFDC2626);
-    if (isShortAnswered) return const Color(0xFFD97706);
+    if (isShortAnswered) return const Color(0xFFF59E0B);
     if (isIncoming) {
-      return amount <= 0 ? const Color(0xFF15803D) : const Color(0xFF16A34A);
+      return AppPalette.online;
     }
-    return amount <= 0 ? const Color(0xFFD97706) : const Color(0xFFDC2626);
-  }
-
-  Color _badgeColor(CallHistoryItem item, String badgeText) {
-    if (badgeText == 'Missed' || badgeText == 'Not answered') {
-      return const Color(0xFFDC2626);
-    }
-
-    if (badgeText == 'Received <60s' || badgeText == 'Call <60s') {
-      return const Color(0xFFD97706);
-    }
-
-    if (item.isIncoming) {
-      if (badgeText == 'Credited') return const Color(0xFF15803D);
-      if (badgeText == 'Pending') return const Color(0xFFD97706);
-      return const Color(0xFF15803D);
-    }
-
-    if (badgeText == 'Paid') return const Color(0xFFDC2626);
-    return const Color(0xFFD97706);
+    return amount <= 0 ? const Color(0xFFF59E0B) : const Color(0xFFDC2626);
   }
 
   Color _cardAccentColor(CallHistoryItem item) {
     if (item.isMissed) return const Color(0xFFDC2626);
-    if (item.isUnderOneMinuteAnswered) return const Color(0xFFD97706);
-    if (item.isIncoming) return const Color(0xFF15803D);
-    return const Color(0xFF4F46E5);
+    if (item.isUnderOneMinuteAnswered) return const Color(0xFFF59E0B);
+    if (item.isIncoming) return AppPalette.online;
+    return AppPalette.blue;
   }
 
   Widget _summaryChip(String label, String value) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F8),
+        color: AppPalette.blueTint,
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: AppPalette.blue.withValues(alpha: 0.22),
+        ),
       ),
       child: Text(
         '$label: $value',
         style: const TextStyle(
           fontWeight: FontWeight.w800,
-          color: Color(0xFF374151),
+          color: AppPalette.blue,
+          fontSize: 12,
         ),
       ),
     );
@@ -102,44 +89,124 @@ class CallHistoryScreen extends StatelessWidget {
     return '$hour12:$minute $amPm';
   }
 
-  String _titleForItem(CallHistoryItem item) {
+  String _statusLabelForItem(CallHistoryItem item) {
     if (item.isMissed) {
-      return item.isIncoming ? 'Missed incoming call' : 'Unanswered outgoing call';
+      final reason = '${item.endedReason} ${item.rejectedReason}'.toLowerCase();
+      if (reason.contains('cancel')) return 'Cancelled';
+      if (reason.contains('reject') || reason.contains('decline')) {
+        return 'Declined';
+      }
+      if (reason.contains('timeout') || reason.contains('no_answer')) {
+        return 'Missed';
+      }
+      return 'Missed';
     }
 
-    if (item.isUnderOneMinuteAnswered) {
+    if (item.isPaidCall) {
       return item.isIncoming
-          ? 'Received call under 60s'
-          : 'Outgoing call under 60s';
+          ? (item.listenerCredited ? 'Credited' : 'Pending')
+          : 'Paid';
+    }
+
+    if (item.isFreeAnsweredCall) return 'Free';
+    return item.isIncoming ? 'Received' : 'Completed';
+  }
+
+  IconData _directionIconForItem(CallHistoryItem item) {
+    if (item.isMissed) {
+      return item.isIncoming
+          ? Icons.call_missed_rounded
+          : Icons.phone_missed_rounded;
     }
 
     return item.isIncoming
-        ? 'Incoming call'
-        : 'Outgoing call';
+        ? Icons.call_received_rounded
+        : Icons.call_made_rounded;
   }
 
-  String _subtitleForItem(CallHistoryItem item) {
-    return item.isIncoming ? 'From: ${item.name}' : 'To: ${item.name}';
+  Widget _historyAvatar(CallHistoryItem item, Color accentColor) {
+    final safeName = item.name.trim();
+    final initial =
+        safeName.isEmpty ? '?' : safeName.substring(0, 1).toUpperCase();
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          width: 44,
+          height: 44,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppPalette.blue,
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.28),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: accentColor.withValues(alpha: 0.18),
+                blurRadius: 12,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Text(
+            initial,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        Positioned(
+          right: -2,
+          bottom: -2,
+          child: Container(
+            width: 20,
+            height: 20,
+            decoration: BoxDecoration(
+              color: AppPalette.card,
+              shape: BoxShape.circle,
+              border: Border.all(color: AppPalette.card, width: 2),
+            ),
+            child: Icon(
+              _directionIconForItem(item),
+              color: accentColor,
+              size: 13,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
-  Widget _metaChip({
-    required String text,
+  Widget _statusPill({
+    required String label,
     required Color color,
+    required IconData icon,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.24)),
+        border: Border.all(color: color.withValues(alpha: 0.20)),
       ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.w800,
-          fontSize: 12,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 12),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w900,
+              fontSize: 10.5,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -147,18 +214,18 @@ class CallHistoryScreen extends StatelessWidget {
   Color _callStateColor(CallSessionManager session) {
     switch (session.state) {
       case CallState.connected:
-        return const Color(0xFF15803D);
+        return AppPalette.online;
       case CallState.reconnecting:
-        return const Color(0xFFD97706);
+        return const Color(0xFFF59E0B);
       case CallState.failed:
       case CallState.ending:
       case CallState.ended:
         return const Color(0xFFDC2626);
       case CallState.preparing:
       case CallState.joining:
-        return const Color(0xFF4F46E5);
+        return AppPalette.blue;
       case CallState.idle:
-        return const Color(0xFF6B7280);
+        return AppPalette.textSecondary;
     }
   }
 
@@ -183,56 +250,219 @@ class CallHistoryScreen extends StatelessWidget {
     }
   }
 
-  Widget _statTile({
+  Widget _overviewMetric({
     required String label,
     required String value,
-    String? subtitle,
-    bool highlight = false,
   }) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: highlight ? const Color(0xFFEEF2FF) : const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(18),
+        color: AppPalette.feedBg,
+        borderRadius: BorderRadius.circular(13),
         border: Border.all(
-          color: highlight
-              ? const Color(0xFFC7D2FE)
-              : const Color(0xFFE5E7EB),
+          color: AppPalette.border,
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+              color: AppPalette.textPrimary,
+            ),
+          ),
+          const SizedBox(width: 5),
           Text(
             label,
             style: const TextStyle(
-              color: Color(0xFF6B7280),
-              fontWeight: FontWeight.w700,
+              color: AppPalette.textSecondary,
+              fontWeight: FontWeight.w800,
+              fontSize: 11.5,
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: highlight ? 24 : 20,
-              fontWeight: FontWeight.w900,
-              color: highlight
-                  ? const Color(0xFF312E81)
-                  : const Color(0xFF111827),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showOverviewBreakdown({
+    required BuildContext context,
+    required int totalCount,
+    required int incomingCount,
+    required int outgoingCount,
+    required int missedCount,
+    required int freeCount,
+    required int paidCount,
+  }) {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return Dialog(
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 24),
+          backgroundColor: Colors.transparent,
+          child: Container(
+            decoration: AppPalette.cardDecoration(radius: 18),
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Call Overview',
+                        style: TextStyle(
+                          color: AppPalette.textPrimary,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 17,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppPalette.blue,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        '$totalCount total',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => Navigator.pop(dialogContext),
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        color: AppPalette.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 7,
+                  runSpacing: 7,
+                  children: [
+                    _overviewMetric(
+                      label: 'Incoming',
+                      value: '$incomingCount',
+                    ),
+                    _overviewMetric(
+                      label: 'Outgoing',
+                      value: '$outgoingCount',
+                    ),
+                    _overviewMetric(label: 'Missed', value: '$missedCount'),
+                    _overviewMetric(label: 'Free', value: '$freeCount'),
+                    _overviewMetric(label: 'Paid', value: '$paidCount'),
+                  ],
+                ),
+              ],
             ),
           ),
-          if (subtitle != null && subtitle.trim().isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: const TextStyle(
-                color: Color(0xFF6B7280),
-                fontWeight: FontWeight.w600,
-                height: 1.3,
+        );
+      },
+    );
+  }
+
+  Widget _overviewButton({
+    required BuildContext context,
+    required int totalCount,
+    required int incomingCount,
+    required int outgoingCount,
+    required int missedCount,
+    required int freeCount,
+    required int paidCount,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: () => _showOverviewBreakdown(
+        context: context,
+        totalCount: totalCount,
+        incomingCount: incomingCount,
+        outgoingCount: outgoingCount,
+        missedCount: missedCount,
+        freeCount: freeCount,
+        paidCount: paidCount,
+      ),
+      child: Container(
+        decoration: AppPalette.cardDecoration(radius: 18),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: AppPalette.blueTint,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.analytics_outlined,
+                color: AppPalette.blue,
+                size: 20,
               ),
             ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Total calls',
+                    style: TextStyle(
+                      color: AppPalette.textSecondary,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 11.5,
+                    ),
+                  ),
+                  SizedBox(height: 1),
+                  Text(
+                    'Overview',
+                    style: TextStyle(
+                      color: AppPalette.textPrimary,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+              decoration: BoxDecoration(
+                color: AppPalette.blue,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '$totalCount total',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Icon(
+              Icons.keyboard_arrow_down_rounded,
+              color: AppPalette.textSecondary,
+            ),
           ],
-        ],
+        ),
       ),
     );
   }
@@ -250,10 +480,16 @@ class CallHistoryScreen extends StatelessWidget {
 
         final call = session.call;
         final otherName = session.iAmCaller
-            ? (((call['calleeName'] ?? '') as Object).toString().trim().isNotEmpty
+            ? (((call['calleeName'] ?? '') as Object)
+                    .toString()
+                    .trim()
+                    .isNotEmpty
                 ? (call['calleeName'] as String).trim()
                 : 'Listener')
-            : (((call['callerName'] ?? '') as Object).toString().trim().isNotEmpty
+            : (((call['callerName'] ?? '') as Object)
+                    .toString()
+                    .trim()
+                    .isNotEmpty
                 ? (call['callerName'] as String).trim()
                 : 'User');
 
@@ -265,87 +501,93 @@ class CallHistoryScreen extends StatelessWidget {
         final showDuration = session.state == CallState.connected ||
             session.state == CallState.reconnecting;
 
-        return Card(
-          color: const Color(0xFFECFDF3),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              children: [
-                const CircleAvatar(
-                  backgroundColor: Color(0xFFD1FAE5),
-                  child: Icon(Icons.call, color: Color(0xFF047857)),
+        return Container(
+          decoration: AppPalette.cardDecoration(radius: 18),
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppPalette.online.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Call is active',
+                child: const Icon(
+                  Icons.call,
+                  color: AppPalette.online,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Call is active',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16,
+                        color: AppPalette.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'With $otherName - $safeStateLabel',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: AppPalette.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      showDuration ? 'Duration $mm:$ss' : 'Connecting...',
+                      style: const TextStyle(
+                        color: AppPalette.textSecondary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: safeStateColor.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: safeStateColor.withValues(alpha: 0.24),
+                        ),
+                      ),
+                      child: Text(
+                        'State: ${session.state.name}',
                         style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 16,
-                          color: Color(0xFF111827),
+                          color: safeStateColor,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'With $otherName • $safeStateLabel',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF374151),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        showDuration ? 'Duration $mm:$ss' : 'Connecting...',
-                        style: const TextStyle(
-                          color: Color(0xFF6B7280),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: safeStateColor.withValues(alpha: 0.10),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: safeStateColor.withValues(alpha: 0.24),
-                          ),
-                        ),
-                        child: Text(
-                          'State: ${session.state.name}',
-                          style: TextStyle(
-                            color: safeStateColor,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 10),
-                FilledButton(
-                  onPressed: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        settings: const RouteSettings(
-                          name: VoiceCallScreen.routeName,
-                        ),
-                        builder: (_) => const VoiceCallScreen(),
+              ),
+              const SizedBox(width: 10),
+              FilledButton(
+                onPressed: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      settings: const RouteSettings(
+                        name: VoiceCallScreen.routeName,
                       ),
-                    );
-                  },
-                  child: const Text('Open'),
-                ),
-              ],
-            ),
+                      builder: (_) => const VoiceCallScreen(),
+                    ),
+                  );
+                },
+                child: const Text('Open'),
+              ),
+            ],
           ),
         );
       },
@@ -357,22 +599,15 @@ class CallHistoryScreen extends StatelessWidget {
     CallHistoryItem item,
     HistoryRepository historyRepository,
   ) {
-    final title = _titleForItem(item);
-    final subtitle = _subtitleForItem(item);
-    final durationDetailed =
-        historyRepository.durationLabelDetailed(item.seconds);
-    final durationCompact =
-        historyRepository.durationLabelCompact(item.seconds);
+    final durationLabel = historyRepository.durationLabelDetailed(item.seconds);
     final dateLabel = _dateLabel(item.endedAtMs);
     final timeLabel = _timeLabel(item.endedAtMs);
+    final statusLabel = _statusLabelForItem(item);
 
     final amountLabel = historyRepository.amountLabel(
       isIncoming: item.isIncoming,
       amount: item.amount,
     );
-
-    final badgeText = historyRepository.badgeText(item);
-    final secondaryStatus = historyRepository.secondaryStatus(item);
 
     final amountColor = _amountColor(
       isIncoming: item.isIncoming,
@@ -381,132 +616,102 @@ class CallHistoryScreen extends StatelessWidget {
       isShortAnswered: item.isUnderOneMinuteAnswered,
     );
 
-    final badgeColor = _badgeColor(item, badgeText);
     final accentColor = _cardAccentColor(item);
+    final directionIcon = _directionIconForItem(item);
 
-    final icon = item.isMissed
-        ? (item.isIncoming ? Icons.call_missed : Icons.phone_missed)
-        : item.isIncoming
-            ? Icons.call_received
-            : Icons.call_made;
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          children: [
-            Row(
+    return Container(
+      decoration: BoxDecoration(
+        color: AppPalette.card,
+        borderRadius: BorderRadius.circular(17),
+        border: Border.all(
+          color: AppPalette.border,
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      child: Row(
+        children: [
+          _historyAvatar(item, accentColor),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                CircleAvatar(
-                  backgroundColor: accentColor.withValues(alpha: 0.12),
-                  child: Icon(
-                    icon,
-                    color: accentColor,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 15,
-                          color: Color(0xFF111827),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        subtitle,
-                        style: const TextStyle(
-                          color: Color(0xFF374151),
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 10),
                 Text(
-                  amountLabel,
-                  style: TextStyle(
+                  item.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
                     fontWeight: FontWeight.w900,
-                    color: amountColor,
-                    fontSize: 16,
+                    fontSize: 15,
+                    color: AppPalette.textPrimary,
                   ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.schedule_rounded,
+                      size: 12,
+                      color: AppPalette.textMuted,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        '$dateLabel, $timeLabel',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppPalette.textSecondary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.timer_outlined,
+                      size: 12,
+                      color: AppPalette.textMuted,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      durationLabel,
+                      style: const TextStyle(
+                        color: AppPalette.textSecondary,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11.5,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Duration: $durationDetailed',
-                    style: const TextStyle(
-                      color: Color(0xFF6B7280),
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: badgeColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: badgeColor.withValues(alpha: 0.30),
-                    ),
-                  ),
-                  child: Text(
-                    badgeText,
-                    style: TextStyle(
-                      color: badgeColor,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                secondaryStatus,
+          ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                amountLabel,
                 style: TextStyle(
-                  color: accentColor,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w900,
+                  color: amountColor,
+                  fontSize: 15,
                 ),
               ),
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _metaChip(
-                  text: dateLabel,
-                  color: const Color(0xFF4F46E5),
-                ),
-                _metaChip(
-                  text: timeLabel,
-                  color: const Color(0xFF7C3AED),
-                ),
-                _metaChip(
-                  text: durationCompact,
-                  color: accentColor,
-                ),
-              ],
-            ),
-          ],
-        ),
+              const SizedBox(height: 6),
+              _statusPill(
+                label: statusLabel,
+                color: accentColor,
+                icon: directionIcon,
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -518,10 +723,18 @@ class CallHistoryScreen extends StatelessWidget {
         _activeCallBanner(context, session),
         if (session.active) const SizedBox(height: 12),
         const SizedBox(height: 80),
-        const Icon(
-          Icons.history_rounded,
-          size: 56,
-          color: Color(0xFF9CA3AF),
+        Container(
+          width: 72,
+          height: 72,
+          decoration: BoxDecoration(
+            color: AppPalette.blueTint,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: const Icon(
+            Icons.history_rounded,
+            size: 34,
+            color: AppPalette.blue,
+          ),
         ),
         const SizedBox(height: 12),
         const Center(
@@ -530,7 +743,7 @@ class CallHistoryScreen extends StatelessWidget {
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w900,
-              color: Color(0xFF111827),
+              color: AppPalette.textPrimary,
             ),
           ),
         ),
@@ -540,7 +753,7 @@ class CallHistoryScreen extends StatelessWidget {
             'Your past incoming and outgoing calls will appear here.',
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: Color(0xFF6B7280),
+              color: AppPalette.textSecondary,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -554,136 +767,79 @@ class CallHistoryScreen extends StatelessWidget {
     final historyRepository = HistoryRepository.instance;
     final session = CallSessionManager.instance;
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Call History')),
-      body: StreamBuilder<List<CallHistoryItem>>(
-        stream: historyRepository.watchMyCallHistory(),
-        builder: (_, snap) {
-          if (!snap.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+        statusBarBrightness: Brightness.light,
+      ),
+      child: Scaffold(
+        backgroundColor: AppPalette.pageBg,
+        appBar: AppBar(
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          backgroundColor: Colors.transparent,
+          foregroundColor: AppPalette.textPrimary,
+          surfaceTintColor: Colors.transparent,
+          title: const Text('Call History'),
+        ),
+        body: DecoratedBox(
+          decoration: const BoxDecoration(color: AppPalette.pageBg),
+          child: StreamBuilder<List<CallHistoryItem>>(
+            stream: historyRepository.watchMyCallHistory(),
+            builder: (_, snap) {
+              if (!snap.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
 
-          final items = snap.data!;
+              final items = snap.data!;
 
-          if (historyRepository.isEmpty(items)) {
-            return _emptyState(session, context);
-          }
+              if (historyRepository.isEmpty(items)) {
+                return _emptyState(session, context);
+              }
 
-          final incomingCount = items.where((e) => e.isIncoming).length;
-          final outgoingCount = items.where((e) => !e.isIncoming).length;
-          final missedCount = historyRepository.missedCount(items);
-          final shortCount = historyRepository.shortAnsweredCount(items);
-          final paidCount = historyRepository.paidCount(items);
+              final incomingCount = items.where((e) => e.isIncoming).length;
+              final outgoingCount = items.where((e) => !e.isIncoming).length;
+              final missedCount = historyRepository.missedCount(items);
+              final shortCount = historyRepository.shortAnsweredCount(items);
+              final paidCount = historyRepository.paidCount(items);
 
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
-            children: [
-              _activeCallBanner(context, session),
-              if (session.active) const SizedBox(height: 12),
-
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'History Overview',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                          color: Color(0xFF111827),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      const Text(
-                        'A cleaner summary of your recent calls and outcomes.',
-                        style: TextStyle(
-                          color: Color(0xFF6B7280),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      _statTile(
-                        label: 'Total calls',
-                        value: '${items.length}',
-                        subtitle: 'All recorded call history',
-                        highlight: true,
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _statTile(
-                              label: 'Incoming',
-                              value: '$incomingCount',
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _statTile(
-                              label: 'Outgoing',
-                              value: '$outgoingCount',
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _statTile(
-                              label: 'Missed',
-                              value: '$missedCount',
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _statTile(
-                              label: 'Under 60s',
-                              value: '$shortCount',
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      _statTile(
-                        label: 'Paid / Credited',
-                        value: '$paidCount',
-                        subtitle: 'Calls that created billing or credit result',
-                      ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _summaryChip('State', session.state.name),
-                          _summaryChip('Incoming', '$incomingCount'),
-                          _summaryChip('Outgoing', '$outgoingCount'),
-                          _summaryChip('Missed', '$missedCount'),
-                        ],
-                      ),
-                    ],
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 20),
+                children: [
+                  _activeCallBanner(context, session),
+                  if (session.active) const SizedBox(height: 12),
+                  _overviewButton(
+                    context: context,
+                    totalCount: items.length,
+                    incomingCount: incomingCount,
+                    outgoingCount: outgoingCount,
+                    missedCount: missedCount,
+                    freeCount: shortCount,
+                    paidCount: paidCount,
                   ),
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              ...List.generate(items.length, (i) {
-                final item = items[i];
-                return Padding(
-                  padding: EdgeInsets.only(bottom: i == items.length - 1 ? 0 : 10),
-                  child: _historyCard(
-                    context,
-                    item,
-                    historyRepository,
-                  ),
-                );
-              }),
-            ],
-          );
-        },
+                  if (session.active) ...[
+                    const SizedBox(height: 8),
+                    _summaryChip('State', session.state.name),
+                  ],
+                  const SizedBox(height: 12),
+                  ...List.generate(items.length, (i) {
+                    final item = items[i];
+                    return Padding(
+                      padding: EdgeInsets.only(
+                          bottom: i == items.length - 1 ? 0 : 8),
+                      child: _historyCard(
+                        context,
+                        item,
+                        historyRepository,
+                      ),
+                    );
+                  }),
+                ],
+              );
+            },
+          ),
+        ),
       ),
     );
   }
