@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../core/constants/legal_links.dart';
+import '../core/theme/app_palette.dart';
+
 class CrisisHelpScreen extends StatelessWidget {
   const CrisisHelpScreen({super.key});
 
@@ -9,6 +12,8 @@ class CrisisHelpScreen extends StatelessWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('$label number copied: $number'),
+        backgroundColor: AppPalette.card,
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
@@ -22,6 +27,8 @@ class CrisisHelpScreen extends StatelessWidget {
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
+      backgroundColor: AppPalette.card,
+      barrierColor: Colors.black.withValues(alpha: 0.62),
       builder: (sheetContext) {
         return SafeArea(
           child: Padding(
@@ -40,14 +47,14 @@ class CrisisHelpScreen extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w900,
-                      color: Color(0xFF111827),
+                      color: AppPalette.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 12),
                   Text(
                     body,
                     style: const TextStyle(
-                      color: Color(0xFF374151),
+                      color: AppPalette.textSecondary,
                       fontWeight: FontWeight.w600,
                       height: 1.45,
                     ),
@@ -70,43 +77,41 @@ class CrisisHelpScreen extends StatelessWidget {
   }
 
   Widget _heroCard() {
-    return Card(
-      color: const Color(0xFFFEF2F2),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          children: const [
-            CircleAvatar(
-              radius: 28,
-              backgroundColor: Color(0xFFFEE2E2),
-              child: Icon(
-                Icons.health_and_safety_rounded,
-                color: Color(0xFFDC2626),
-                size: 28,
-              ),
+    return Container(
+      decoration: AppPalette.cardDecoration(radius: 18),
+      padding: const EdgeInsets.all(18),
+      child: const Column(
+        children: [
+          CircleAvatar(
+            radius: 28,
+            backgroundColor: Color(0xFFDC2626),
+            child: Icon(
+              Icons.health_and_safety_rounded,
+              color: Colors.white,
+              size: 28,
             ),
-            SizedBox(height: 14),
-            Text(
-              'Get immediate help now',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w900,
-                color: Color(0xFF111827),
-              ),
+          ),
+          SizedBox(height: 14),
+          Text(
+            'Get immediate help now',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+              color: AppPalette.textPrimary,
             ),
-            SizedBox(height: 8),
-            Text(
-              'If you are in immediate danger, feel unsafe, or think you may harm yourself or someone else, stop using the app and contact emergency or crisis support right away.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Color(0xFF6B7280),
-                fontWeight: FontWeight.w600,
-                height: 1.4,
-              ),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'If you are in immediate danger, feel unsafe, or think you may harm yourself or someone else, stop using the app and contact emergency or crisis support right away.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: AppPalette.textSecondary,
+              fontWeight: FontWeight.w600,
+              height: 1.4,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -115,13 +120,16 @@ class CrisisHelpScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF7ED),
+        color: const Color(0xFFF59E0B).withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: const Color(0xFFF59E0B).withValues(alpha: 0.25),
+        ),
       ),
       child: Text(
         text,
         style: const TextStyle(
-          color: Color(0xFFD97706),
+          color: Color(0xFFB45309),
           fontWeight: FontWeight.w800,
         ),
       ),
@@ -137,65 +145,64 @@ class CrisisHelpScreen extends StatelessWidget {
     required Color iconBg,
     required Color iconColor,
   }) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CircleAvatar(
-              radius: 22,
-              backgroundColor: iconBg,
-              child: Icon(icon, color: iconColor),
+    return Container(
+      decoration: AppPalette.cardDecoration(radius: 18),
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: iconBg.withValues(alpha: 0.18),
+            child: Icon(icon, color: iconColor),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    color: AppPalette.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  number,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: AppPalette.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  body,
+                  style: const TextStyle(
+                    color: AppPalette.textSecondary,
+                    fontWeight: FontWeight.w600,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    FilledButton.icon(
+                      onPressed: () => _copyNumber(context, title, number),
+                      icon: const Icon(Icons.copy_rounded),
+                      label: const Text('Copy number'),
+                    ),
+                  ],
+                ),
+              ],
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF111827),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    number,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF111827),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    body,
-                    style: const TextStyle(
-                      color: Color(0xFF6B7280),
-                      fontWeight: FontWeight.w600,
-                      height: 1.4,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      FilledButton.icon(
-                        onPressed: () => _copyNumber(context, title, number),
-                        icon: const Icon(Icons.copy_rounded),
-                        label: const Text('Copy number'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -203,17 +210,12 @@ class CrisisHelpScreen extends StatelessWidget {
   Widget _infoCard({
     required String title,
     required String body,
-    Color color = const Color(0xFFF8FAFC),
-    Color border = const Color(0xFFE5E7EB),
+    Color? accent,
   }) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: border),
-      ),
+      decoration: AppPalette.cardDecoration(radius: 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -222,14 +224,14 @@ class CrisisHelpScreen extends StatelessWidget {
             style: const TextStyle(
               fontWeight: FontWeight.w900,
               fontSize: 16,
-              color: Color(0xFF111827),
+              color: AppPalette.textPrimary,
             ),
           ),
           const SizedBox(height: 8),
           Text(
             body,
             style: const TextStyle(
-              color: Color(0xFF6B7280),
+              color: AppPalette.textSecondary,
               fontWeight: FontWeight.w600,
               height: 1.45,
             ),
@@ -246,44 +248,43 @@ class CrisisHelpScreen extends StatelessWidget {
     required Color iconBg,
     required Color iconColor,
   }) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CircleAvatar(
-              radius: 22,
-              backgroundColor: iconBg,
-              child: Icon(icon, color: iconColor),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF111827),
-                    ),
+    return Container(
+      decoration: AppPalette.cardDecoration(radius: 18),
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: iconBg.withValues(alpha: 0.18),
+            child: Icon(icon, color: iconColor),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    color: AppPalette.textPrimary,
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    body,
-                    style: const TextStyle(
-                      color: Color(0xFF6B7280),
-                      fontWeight: FontWeight.w600,
-                      height: 1.4,
-                    ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  body,
+                  style: const TextStyle(
+                    color: AppPalette.textSecondary,
+                    fontWeight: FontWeight.w600,
+                    height: 1.4,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -296,24 +297,27 @@ class CrisisHelpScreen extends StatelessWidget {
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: const CircleAvatar(
-        backgroundColor: Color(0xFFF3F4F6),
-        child: Icon(Icons.copy_rounded, color: Color(0xFF374151)),
+        backgroundColor: AppPalette.blue,
+        child: Icon(Icons.copy_rounded, color: Colors.white),
       ),
       title: Text(
         label,
         style: const TextStyle(
           fontWeight: FontWeight.w900,
-          color: Color(0xFF111827),
+          color: AppPalette.textPrimary,
         ),
       ),
       subtitle: Text(
         value,
         style: const TextStyle(
-          color: Color(0xFF6B7280),
+          color: AppPalette.textSecondary,
           fontWeight: FontWeight.w700,
         ),
       ),
-      trailing: const Icon(Icons.chevron_right_rounded),
+      trailing: const Icon(
+        Icons.chevron_right_rounded,
+        color: AppPalette.textSecondary,
+      ),
       onTap: () => _copyNumber(context, label, value),
     );
   }
@@ -321,166 +325,171 @@ class CrisisHelpScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppPalette.pageBg,
       appBar: AppBar(
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        backgroundColor: Colors.transparent,
+        foregroundColor: AppPalette.textPrimary,
+        surfaceTintColor: Colors.transparent,
         title: const Text('Crisis Help'),
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
-        children: [
-          _heroCard(),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _warningChip('India emergency numbers'),
-              _warningChip('Safety first'),
-              _warningChip('Not a therapy service'),
-            ],
-          ),
-          const SizedBox(height: 12),
-          _helplineCard(
-            context: context,
-            icon: Icons.local_police_rounded,
-            title: 'Emergency response',
-            number: '112',
-            body:
-                'Use this first if there is immediate danger, violence, self-harm risk, or urgent safety threat.',
-            iconBg: const Color(0xFFEEF2FF),
-            iconColor: const Color(0xFF4F46E5),
-          ),
-          const SizedBox(height: 10),
-          _helplineCard(
-            context: context,
-            icon: Icons.psychology_rounded,
-            title: 'Tele-MANAS mental health support',
-            number: '14416',
-            body:
-                'Use this for immediate mental health support and crisis counselling in India when you need to speak to a counsellor.',
-            iconBg: const Color(0xFFECFDF3),
-            iconColor: const Color(0xFF15803D),
-          ),
-          const SizedBox(height: 10),
-          _helplineCard(
-            context: context,
-            icon: Icons.support_agent_rounded,
-            title: 'Tele-MANAS alternate number',
-            number: '1-800-891-4416',
-            body:
-                'Alternate Tele-MANAS number for mental health support if needed.',
-            iconBg: const Color(0xFFF0F9FF),
-            iconColor: const Color(0xFF0369A1),
-          ),
-          const SizedBox(height: 10),
-          _helplineCard(
-            context: context,
-            icon: Icons.woman_rounded,
-            title: 'NCW women helpline',
-            number: '14490',
-            body:
-                'For women facing violence, harassment, emotional distress, or needing legal/support escalation.',
-            iconBg: const Color(0xFFFEF2F2),
-            iconColor: const Color(0xFFDC2626),
-          ),
-          const SizedBox(height: 12),
-          _stepCard(
-            icon: Icons.people_alt_rounded,
-            title: 'Contact a trusted person immediately',
-            body:
-                'Call or message a family member, close friend, partner, roommate, or someone nearby and tell them you need support right now.',
-            iconBg: const Color(0xFFECFDF3),
-            iconColor: const Color(0xFF15803D),
-          ),
-          const SizedBox(height: 10),
-          _stepCard(
-            icon: Icons.local_hospital_rounded,
-            title: 'Go to the nearest hospital or emergency department',
-            body:
-                'If you are at risk of harming yourself or are unable to stay safe, go to the nearest hospital, clinic, or emergency room immediately.',
-            iconBg: const Color(0xFFFEF2F2),
-            iconColor: const Color(0xFFDC2626),
-          ),
-          const SizedBox(height: 12),
-          _infoCard(
-            title: 'Important',
-            body:
-                'Friendify is not therapy, not a medical service, and cannot provide emergency rescue, psychiatric treatment, ambulance response, or crisis intervention.',
-            color: const Color(0xFFFFFBEB),
-            border: const Color(0xFFFDE68A),
-          ),
-          const SizedBox(height: 12),
-          _infoCard(
-            title: 'What you should do next',
-            body:
-                'Move away from anything dangerous, do not stay alone if possible, contact real-world support immediately, and use professional emergency or crisis services in your area.',
-          ),
-          const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFFE5E7EB)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      body: DecoratedBox(
+        decoration: const BoxDecoration(color: AppPalette.pageBg),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
+          children: [
+            _heroCard(),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                const Text(
-                  'Quick copy list',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 16,
-                    color: Color(0xFF111827),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                _copyRow(
-                  context,
-                  label: 'Emergency',
-                  value: '112',
-                ),
-                _copyRow(
-                  context,
-                  label: 'Tele-MANAS',
-                  value: '14416',
-                ),
-                _copyRow(
-                  context,
-                  label: 'Tele-MANAS alternate',
-                  value: '1-800-891-4416',
-                ),
-                _copyRow(
-                  context,
-                  label: 'NCW women helpline',
-                  value: '14490',
-                ),
+                _warningChip('India emergency numbers'),
+                _warningChip('Safety first'),
+                _warningChip('Not a therapy service'),
               ],
             ),
-          ),
-          const SizedBox(height: 12),
-          _infoCard(
-            title: 'Support / grievance launch note',
-            body:
-                'Friendify support contact, grievance officer/contact, Privacy Policy, Terms, and Refund Policy still need final approved production details before launch. This crisis screen only covers immediate emergency and crisis direction.',
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () {
-                _showInfoSheet(
-                  context,
-                  title: 'Why this screen exists',
-                  body:
-                      'This screen is meant to make crisis and emergency direction clearly reachable inside the app. It is not a substitute for emergency services, therapy, medical care, or official crisis intervention.',
-                );
-              },
-              icon: const Icon(Icons.info_outline_rounded),
-              label: const Text('About this screen'),
+            const SizedBox(height: 12),
+            _helplineCard(
+              context: context,
+              icon: Icons.local_police_rounded,
+              title: 'Emergency response',
+              number: '112',
+              body:
+                  'Use this first if there is immediate danger, violence, self-harm risk, or urgent safety threat.',
+              iconBg: AppPalette.blue,
+              iconColor: AppPalette.blue,
             ),
-          ),
-        ],
+            const SizedBox(height: 10),
+            _helplineCard(
+              context: context,
+              icon: Icons.psychology_rounded,
+              title: 'Tele-MANAS mental health support',
+              number: '14416',
+              body:
+                  'Use this for immediate mental health support and crisis counselling in India when you need to speak to a counsellor.',
+              iconBg: AppPalette.online,
+              iconColor: AppPalette.online,
+            ),
+            const SizedBox(height: 10),
+            _helplineCard(
+              context: context,
+              icon: Icons.support_agent_rounded,
+              title: 'Tele-MANAS alternate number',
+              number: '1-800-891-4416',
+              body:
+                  'Alternate Tele-MANAS number for mental health support if needed.',
+              iconBg: const Color(0xFF14B8A6),
+              iconColor: const Color(0xFF14B8A6),
+            ),
+            const SizedBox(height: 10),
+            _helplineCard(
+              context: context,
+              icon: Icons.woman_rounded,
+              title: 'NCW women helpline',
+              number: '14490',
+              body:
+                  'For women facing violence, harassment, emotional distress, or needing legal/support escalation.',
+              iconBg: const Color(0xFFDC2626),
+              iconColor: const Color(0xFFDC2626),
+            ),
+            const SizedBox(height: 12),
+            _stepCard(
+              icon: Icons.people_alt_rounded,
+              title: 'Contact a trusted person immediately',
+              body:
+                  'Call or message a family member, close friend, partner, roommate, or someone nearby and tell them you need support right now.',
+              iconBg: AppPalette.online,
+              iconColor: AppPalette.online,
+            ),
+            const SizedBox(height: 10),
+            _stepCard(
+              icon: Icons.local_hospital_rounded,
+              title: 'Go to the nearest hospital or emergency department',
+              body:
+                  'If you are at risk of harming yourself or are unable to stay safe, go to the nearest hospital, clinic, or emergency room immediately.',
+              iconBg: const Color(0xFFDC2626),
+              iconColor: const Color(0xFFDC2626),
+            ),
+            const SizedBox(height: 12),
+            _infoCard(
+              title: 'Important',
+              body:
+                  'Friendify is not therapy, not a medical service, and cannot provide emergency rescue, psychiatric treatment, ambulance response, or crisis intervention.',
+              accent: const Color(0xFFF59E0B),
+            ),
+            const SizedBox(height: 12),
+            _infoCard(
+              title: 'What you should do next',
+              body:
+                  'Move away from anything dangerous, do not stay alone if possible, contact real-world support immediately, and use professional emergency or crisis services in your area.',
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: AppPalette.cardDecoration(radius: 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Quick copy list',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                      color: AppPalette.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _copyRow(
+                    context,
+                    label: 'Emergency',
+                    value: '112',
+                  ),
+                  _copyRow(
+                    context,
+                    label: 'Tele-MANAS',
+                    value: '14416',
+                  ),
+                  _copyRow(
+                    context,
+                    label: 'Tele-MANAS alternate',
+                    value: '1-800-891-4416',
+                  ),
+                  _copyRow(
+                    context,
+                    label: 'NCW women helpline',
+                    value: '14490',
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            _infoCard(
+              title: 'Friendify support',
+              body: LegalLinks.hasSupport
+                  ? 'For account or app support, use the Friendify support details below.\n\n${LegalLinks.supportMessage}'
+                  : 'Support details are available from Profile > Support.',
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  _showInfoSheet(
+                    context,
+                    title: 'Why this screen exists',
+                    body:
+                        'This screen is meant to make crisis and emergency direction clearly reachable inside the app. It is not a substitute for emergency services, therapy, medical care, or official crisis intervention.',
+                  );
+                },
+                icon: const Icon(Icons.info_outline_rounded),
+                label: const Text('About this screen'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
