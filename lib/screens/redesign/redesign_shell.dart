@@ -490,8 +490,9 @@ class _DiscoverPageState extends State<_DiscoverPage> {
                 final String statusText;
                 if (_filtersActive) {
                   final n = filtered.length;
-                  statusText =
-                      n == 0 ? 'No matches' : '$n ${n == 1 ? 'match' : 'matches'}';
+                  statusText = n == 0
+                      ? 'No matches'
+                      : '$n ${n == 1 ? 'match' : 'matches'}';
                 } else if (!DiscoverRanking.moodActive(_mood)) {
                   statusText = '${all.length} here for you now';
                 } else if (result.matchCount == 0) {
@@ -690,8 +691,7 @@ class _DiscoverPageState extends State<_DiscoverPage> {
                   label: 'Low price',
                   icon: Icons.sort_rounded,
                   selected: _sortLowToHigh,
-                  onTap: () =>
-                      setState(() => _sortLowToHigh = !_sortLowToHigh),
+                  onTap: () => setState(() => _sortLowToHigh = !_sortLowToHigh),
                 ),
                 const SizedBox(width: 7),
                 for (final lang in _filterLanguages) ...[
@@ -804,19 +804,27 @@ class _ListenerCard extends StatelessWidget {
                 if (_online) const _OnlineDot(),
                 if (onToggleFavorite != null) ...[
                   const SizedBox(width: 4),
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: onToggleFavorite,
-                    child: Padding(
-                      padding: const EdgeInsets.all(2),
-                      child: Icon(
-                        isFavorite
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded,
-                        size: 20,
-                        color: isFavorite
-                            ? AppPalette.rose
-                            : AppPalette.textMuted,
+                  MergeSemantics(
+                    child: Semantics(
+                      button: true,
+                      label: isFavorite
+                          ? 'Remove from favourites'
+                          : 'Add to favourites',
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: onToggleFavorite,
+                        child: Padding(
+                          padding: const EdgeInsets.all(2),
+                          child: Icon(
+                            isFavorite
+                                ? Icons.favorite_rounded
+                                : Icons.favorite_border_rounded,
+                            size: 20,
+                            color: isFavorite
+                                ? AppPalette.rose
+                                : AppPalette.textMuted,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -988,9 +996,12 @@ class _AvailabilityCardState extends State<_AvailabilityCard> {
             ),
           ),
           const SizedBox(width: 8),
-          Switch(
-            value: available,
-            onChanged: _busy ? null : _set,
+          Semantics(
+            label: 'Available for calls',
+            child: Switch(
+              value: available,
+              onChanged: _busy ? null : _set,
+            ),
           ),
         ],
       ),
@@ -1695,11 +1706,11 @@ class _CallPageState extends State<_CallPage> {
             final listeners = listenersSnap.data ?? const <AppUserModel>[];
             final sessions =
                 sessionsSnap.data ?? const <Map<String, dynamic>>[];
-            final loading = (listenersSnap.connectionState ==
-                        ConnectionState.waiting &&
-                    listeners.isEmpty) ||
-                (sessionsSnap.connectionState == ConnectionState.waiting &&
-                    sessions.isEmpty);
+            final loading =
+                (listenersSnap.connectionState == ConnectionState.waiting &&
+                        listeners.isEmpty) ||
+                    (sessionsSnap.connectionState == ConnectionState.waiting &&
+                        sessions.isEmpty);
             final ready = _readyResolver.callReadyListeners(
               myUid: me.uid,
               listeners: listeners,
@@ -1837,9 +1848,8 @@ class _CallPageState extends State<_CallPage> {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 12,
-                      color: canCall
-                          ? AppPalette.textSecondary
-                          : AppPalette.rose,
+                      color:
+                          canCall ? AppPalette.textSecondary : AppPalette.rose,
                     ),
                   ),
                 ],
@@ -1849,8 +1859,9 @@ class _CallPageState extends State<_CallPage> {
             SizedBox(
               height: 38,
               child: FilledButton.icon(
-                onPressed:
-                    (calling || !canCall) ? null : () => _startCall(me, listener),
+                onPressed: (calling || !canCall)
+                    ? null
+                    : () => _startCall(me, listener),
                 style: FilledButton.styleFrom(
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   backgroundColor: AppPalette.blue,
@@ -2266,26 +2277,63 @@ class _FeedPostCardState extends State<_FeedPostCard> {
                 _likedOverride = null;
               }
               final liked = _likedOverride ?? serverLiked;
-              return InkWell(
+              return MergeSemantics(
+                child: Semantics(
+                  button: true,
+                  label: liked ? 'Unlike' : 'Like',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: () => _toggleLike(liked),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 6),
+                      child: Row(
+                        children: [
+                          Icon(
+                            liked
+                                ? Icons.favorite_rounded
+                                : Icons.favorite_border_rounded,
+                            size: 22,
+                            color: liked
+                                ? AppPalette.rose
+                                : AppPalette.textSecondary,
+                          ),
+                          if (_post.likeCount > 0) ...[
+                            const SizedBox(width: 5),
+                            Text(
+                              '${_post.likeCount}',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: AppPalette.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+          MergeSemantics(
+            child: Semantics(
+              button: true,
+              label: 'Comments',
+              child: InkWell(
                 borderRadius: BorderRadius.circular(999),
-                onTap: () => _toggleLike(liked),
+                onTap: _openDetail,
                 child: Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   child: Row(
                     children: [
-                      Icon(
-                        liked
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded,
-                        size: 22,
-                        color:
-                            liked ? AppPalette.rose : AppPalette.textSecondary,
-                      ),
-                      if (_post.likeCount > 0) ...[
+                      const Icon(Icons.chat_bubble_outline_rounded,
+                          size: 20, color: AppPalette.textSecondary),
+                      if (_post.commentCount > 0) ...[
                         const SizedBox(width: 5),
                         Text(
-                          '${_post.likeCount}',
+                          '${_post.commentCount}',
                           style: const TextStyle(
                             fontSize: 13,
                             color: AppPalette.textSecondary,
@@ -2295,29 +2343,6 @@ class _FeedPostCardState extends State<_FeedPostCard> {
                     ],
                   ),
                 ),
-              );
-            },
-          ),
-          InkWell(
-            borderRadius: BorderRadius.circular(999),
-            onTap: _openDetail,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              child: Row(
-                children: [
-                  const Icon(Icons.chat_bubble_outline_rounded,
-                      size: 20, color: AppPalette.textSecondary),
-                  if (_post.commentCount > 0) ...[
-                    const SizedBox(width: 5),
-                    Text(
-                      '${_post.commentCount}',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: AppPalette.textSecondary,
-                      ),
-                    ),
-                  ],
-                ],
               ),
             ),
           ),
@@ -2337,8 +2362,7 @@ class _FeedPostCardState extends State<_FeedPostCard> {
             icon: const Icon(Icons.phone_rounded, size: 16),
             label: Text(
               talkLabel,
-              style:
-                  const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -2415,43 +2439,49 @@ class _NotificationsBellState extends State<_NotificationsBell> {
       stream: _unread,
       builder: (context, snap) {
         final unread = snap.data ?? 0;
-        return InkWell(
-          borderRadius: BorderRadius.circular(999),
-          onTap: widget.onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(6),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                const Icon(
-                  Icons.notifications_none_rounded,
-                  size: 24,
-                  color: AppPalette.textSecondary,
-                ),
-                if (unread > 0)
-                  Positioned(
-                    right: -4,
-                    top: -4,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 1),
-                      constraints: const BoxConstraints(minWidth: 16),
-                      decoration: BoxDecoration(
-                        color: AppPalette.rose,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        unread > 99 ? '99+' : '$unread',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
+        return MergeSemantics(
+          child: Semantics(
+            button: true,
+            label: 'Notifications',
+            child: InkWell(
+              borderRadius: BorderRadius.circular(999),
+              onTap: widget.onTap,
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    const Icon(
+                      Icons.notifications_none_rounded,
+                      size: 24,
+                      color: AppPalette.textSecondary,
+                    ),
+                    if (unread > 0)
+                      Positioned(
+                        right: -4,
+                        top: -4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 1),
+                          constraints: const BoxConstraints(minWidth: 16),
+                          decoration: BoxDecoration(
+                            color: AppPalette.rose,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            unread > 99 ? '99+' : '$unread',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-              ],
+                  ],
+                ),
+              ),
             ),
           ),
         );
