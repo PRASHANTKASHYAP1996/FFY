@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'core/theme/app_palette.dart';
 import 'repositories/user_repository.dart';
@@ -35,7 +36,10 @@ class FriendifyApp extends StatelessWidget {
       colorScheme: colorScheme,
       scaffoldBackgroundColor: AppPalette.pageBg,
       splashFactory: InkRipple.splashFactory,
-      fontFamily: 'Poppins',
+      // Poppins via google_fonts: fetched on first launch and cached on device
+      // (the app needs network anyway). Drop the .ttf files into assets and
+      // declare them in pubspec to make this fully offline / no first-load flash.
+      fontFamily: GoogleFonts.poppins().fontFamily,
       visualDensity: VisualDensity.standard,
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );

@@ -50,6 +50,7 @@ dependencies:
   # Profile photos
   firebase_storage: ^12.4.10
   image_picker: ^1.2.1
+  google_fonts: ^8.1.0
 
 dev_dependencies:
   flutter_test:
