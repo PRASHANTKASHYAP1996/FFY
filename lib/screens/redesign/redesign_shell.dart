@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/constants/firestore_paths.dart';
 import '../../core/theme/app_palette.dart';
 import '../../repositories/call_repository.dart';
 import '../../repositories/social_repository.dart';
@@ -8,6 +9,7 @@ import '../../repositories/user_repository.dart';
 import '../../shared/models/app_user_model.dart';
 import '../../shared/models/social_post_model.dart';
 import '../call_history_screen.dart';
+import '../caller_waiting_screen.dart';
 import '../chat_conversation_screen.dart';
 import '../earnings_screen.dart';
 import '../help_support_screen.dart';
@@ -1073,135 +1075,463 @@ class _ChatsPageState extends State<_ChatsPage> {
 // Call (the primary action — fast path into a match + call)
 // ---------------------------------------------------------------------------
 
-class _CallPage extends StatelessWidget {
+class _CallPage extends StatefulWidget {
   const _CallPage();
 
-  void _talkNow(BuildContext context) {
+  @override
+  State<_CallPage> createState() => _CallPageState();
+}
+
+class _CallPageState extends State<_CallPage> {
+  final CallRepository _callRepository = CallRepository.instance;
+  final Stream<AppUserModel?> _me = UserRepository.instance.watchMe();
+  final Stream<List<AppUserModel>> _listeners =
+      UserRepository.instance.watchAvailableListeners(limit: 200);
+  late final Stream<List<Map<String, dynamic>>> _sessions =
+      _callRepository.watchCurrentUserChatSessions(limit: 100);
+
+  // uid of the listener whose call is currently being set up.
+  String _callingFor = '';
+
+  void _talkNow() {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const MatchAndCallScreen()),
     );
   }
 
-  void _history(BuildContext context) {
+  void _history() {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const CallHistoryScreen()),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Spacer(flex: 2),
-            Center(
-              child: Container(
-                width: 96,
-                height: 96,
-                decoration: const BoxDecoration(
-                  color: AppPalette.blueTint,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.headset_mic_rounded,
-                    color: AppPalette.blue, size: 44),
-              ),
-            ),
-            const SizedBox(height: 22),
-            const Text(
-              'Need to talk?',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-                color: AppPalette.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              "Someone's ready to listen — privately, just the two of you.",
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                height: 1.45,
-                color: AppPalette.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 26),
-            SizedBox(
-              height: 54,
-              child: FilledButton.icon(
-                onPressed: () => _talkNow(context),
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppPalette.blue,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-                icon: const Icon(Icons.phone_rounded, size: 20),
-                label: const Text(
-                  'Talk now',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              height: 50,
-              child: OutlinedButton.icon(
-                onPressed: () => _history(context),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppPalette.textPrimary,
-                  side: const BorderSide(color: AppPalette.border),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-                icon: const Icon(Icons.access_time_rounded,
-                    size: 18, color: AppPalette.textSecondary),
-                label: const Text(
-                  'Call history',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-                ),
-              ),
-            ),
-            const Spacer(flex: 3),
-            const Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _CallTag('Private'),
-                _CallTag('1-on-1'),
-                _CallTag('Judgment-free'),
-              ],
-            ),
-            const SizedBox(height: 6),
-          ],
+  void _openListenerProfile(AppUserModel listener) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ListenerProfileScreen(
+          listenerId: listener.uid,
+          initialUser: listener,
         ),
       ),
     );
   }
-}
 
-class _CallTag extends StatelessWidget {
-  const _CallTag(this.text);
-  final String text;
+  void _showMessage(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  /// Listeners the current user already has an accepted (call-allowed) chat
+  /// session with — ported verbatim from the old Wallet "Calls hub" so the
+  /// underlying access rules are unchanged.
+  List<AppUserModel> _callReadyListeners({
+    required AppUserModel me,
+    required List<AppUserModel> listeners,
+    required List<Map<String, dynamic>> sessions,
+  }) {
+    final candidates = listeners
+        .where((u) => u.uid.trim().isNotEmpty && u.uid != me.uid)
+        .toList(growable: false);
+
+    final sessionByListener = <String, Map<String, dynamic>>{};
+    for (final session in sessions) {
+      if (session['exists'] != true) continue;
+      final ids = _callRepository.sessionParticipantIds(session).toSet();
+      if (!ids.contains(me.uid)) continue;
+      for (final listener in candidates) {
+        if (ids.contains(listener.uid)) {
+          sessionByListener[listener.uid] = session;
+        }
+      }
+    }
+
+    return candidates.where((listener) {
+      final session = sessionByListener[listener.uid];
+      if (session == null) return false;
+      final blocked = session[FirestorePaths.fieldSpeakerBlocked] == true ||
+          session[FirestorePaths.fieldListenerBlocked] == true;
+      if (blocked) return false;
+      return _sessionAllowsCallAccess(
+        session: session,
+        me: me,
+        listener: listener,
+      );
+    }).toList(growable: false);
+  }
+
+  bool _sessionAllowsCallAccess({
+    required Map<String, dynamic> session,
+    required AppUserModel me,
+    required AppUserModel listener,
+  }) {
+    final strictAllowed = _callRepository.sessionAllowsCallForDirection(
+      session: session,
+      speakerId: me.uid,
+      listenerId: listener.uid,
+    );
+    if (strictAllowed) return true;
+
+    final status = (session[FirestorePaths.fieldChatStatus] ?? '').toString();
+    if (status != FirestorePaths.chatStatusAccepted) return false;
+
+    final actualListenerId =
+        (session[FirestorePaths.fieldActualListenerId] ?? '').toString().trim();
+    return actualListenerId == listener.uid.trim() &&
+        _callRepository.sessionIdentityLooksComplete(
+          session: session,
+          speakerId: me.uid,
+          listenerId: listener.uid,
+        );
+  }
+
+  Future<void> _startCall(AppUserModel me, AppUserModel listener) async {
+    if (_callingFor.isNotEmpty) return;
+    final safeId = listener.uid.trim();
+    if (safeId.isEmpty || safeId == me.uid) return;
+    if (_callRepository.hasBlockingCallState) {
+      _showMessage('Finish your current call flow first.');
+      return;
+    }
+
+    setState(() => _callingFor = safeId);
+    try {
+      final canCall =
+          await _callRepository.canCurrentUserCallListener(listenerId: safeId);
+      if (!mounted) return;
+      final readiness = _callRepository.callReadinessForKnownUsers(
+        me: me,
+        listener: listener,
+        hasCallAccess: canCall,
+        requiredCredits: listener.listenerRate > 0 ? listener.listenerRate : 5,
+      );
+      if (!readiness.canStart) {
+        _showMessage(readiness.message);
+        return;
+      }
+
+      final callStart =
+          await _callRepository.createCallToListener(listenerId: safeId);
+      if (!mounted) return;
+      if (callStart == null || !callStart.canOpenWaitingScreen) {
+        _showMessage('Call could not start. Please try again.');
+        return;
+      }
+
+      await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CallerWaitingScreen(
+            callDocRef: callStart.callRef,
+            initialAgoraToken: callStart.agoraToken,
+            initialAgoraUid: callStart.agoraUid,
+            initialChannelId: callStart.channelId,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _showMessage(_callRepository.humanizeCallActionError(e));
+    } finally {
+      if (mounted) {
+        setState(() => _callingFor = '');
+      } else {
+        _callingFor = '';
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppPalette.feedBg,
-        borderRadius: BorderRadius.circular(999),
+    return SafeArea(
+      bottom: false,
+      child: StreamBuilder<AppUserModel?>(
+        stream: _me,
+        builder: (context, meSnap) {
+          final me = meSnap.data;
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+            children: [
+              _hero(),
+              const SizedBox(height: 26),
+              _quickCallSection(me),
+            ],
+          );
+        },
       ),
-      child: Text(
-        text,
-        style: const TextStyle(fontSize: 11.5, color: AppPalette.textMuted),
+    );
+  }
+
+  Widget _hero() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Center(
+          child: Container(
+            width: 84,
+            height: 84,
+            decoration: const BoxDecoration(
+              color: AppPalette.blueTint,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.headset_mic_rounded,
+                color: AppPalette.blue, size: 40),
+          ),
+        ),
+        const SizedBox(height: 18),
+        const Text(
+          'Need to talk?',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w700,
+            color: AppPalette.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          "Someone's ready to listen — privately, just the two of you.",
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 14,
+            height: 1.45,
+            color: AppPalette.textSecondary,
+          ),
+        ),
+        const SizedBox(height: 22),
+        SizedBox(
+          height: 54,
+          child: FilledButton.icon(
+            onPressed: _talkNow,
+            style: FilledButton.styleFrom(
+              backgroundColor: AppPalette.blue,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            icon: const Icon(Icons.phone_rounded, size: 20),
+            label: const Text(
+              'Talk now',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 50,
+          child: OutlinedButton.icon(
+            onPressed: _history,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppPalette.textPrimary,
+              side: const BorderSide(color: AppPalette.border),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            icon: const Icon(Icons.access_time_rounded,
+                size: 18, color: AppPalette.textSecondary),
+            label: const Text(
+              'Call history',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _quickCallSection(AppUserModel? me) {
+    if (me == null) return const SizedBox.shrink();
+    return StreamBuilder<List<AppUserModel>>(
+      stream: _listeners,
+      builder: (context, listenersSnap) {
+        return StreamBuilder<List<Map<String, dynamic>>>(
+          stream: _sessions,
+          builder: (context, sessionsSnap) {
+            final listeners = listenersSnap.data ?? const <AppUserModel>[];
+            final sessions =
+                sessionsSnap.data ?? const <Map<String, dynamic>>[];
+            final loading = (listenersSnap.connectionState ==
+                        ConnectionState.waiting &&
+                    listeners.isEmpty) ||
+                (sessionsSnap.connectionState == ConnectionState.waiting &&
+                    sessions.isEmpty);
+            final ready = _callReadyListeners(
+              me: me,
+              listeners: listeners,
+              sessions: sessions,
+            );
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Quick call',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: AppPalette.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                const Text(
+                  'People who accepted your chat — tap Call to reach them.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppPalette.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (loading)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(18),
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          color: AppPalette.blue,
+                          strokeWidth: 2.5,
+                        ),
+                      ),
+                    ),
+                  )
+                else if (ready.isEmpty)
+                  _emptyQuickCall()
+                else
+                  ...ready.map(
+                    (u) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _quickCallTile(me, u),
+                    ),
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _emptyQuickCall() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: AppPalette.cardDecoration(radius: 16),
+      child: Column(
+        children: [
+          const Icon(Icons.call_outlined, color: AppPalette.blue, size: 28),
+          const SizedBox(height: 10),
+          const Text(
+            "No accepted contacts yet.\n"
+            'Find someone in Discover and start a chat — once they accept, '
+            'they show up here for one-tap calling.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.45,
+              color: AppPalette.textSecondary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 14),
+          OutlinedButton(
+            onPressed: _talkNow,
+            child: const Text('Find listeners'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _quickCallTile(AppUserModel me, AppUserModel listener) {
+    final calling = _callingFor == listener.uid;
+    final rate = listener.listenerRate > 0 ? listener.listenerRate : 5;
+    final readiness = _callRepository.callReadinessForKnownUsers(
+      me: me,
+      listener: listener,
+      hasCallAccess: true,
+      requiredCredits: rate,
+    );
+    final canCall = readiness.canStart;
+    final ratingLabel = listener.ratingCount <= 0
+        ? 'New'
+        : listener.ratingAvg.toStringAsFixed(1);
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () => _openListenerProfile(listener),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: AppPalette.cardDecoration(radius: 16),
+        child: Row(
+          children: [
+            _Avatar(
+              initials: _initialsFromName(listener.safeDisplayName),
+              photoUrl: listener.photoURL,
+              size: 44,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    listener.safeDisplayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: AppPalette.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '⭐ $ratingLabel · ₹$rate/min'
+                    '${canCall ? '' : ' · ${readiness.label}'}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: canCall
+                          ? AppPalette.textSecondary
+                          : AppPalette.rose,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              height: 38,
+              child: FilledButton.icon(
+                onPressed:
+                    (calling || !canCall) ? null : () => _startCall(me, listener),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  backgroundColor: AppPalette.blue,
+                  disabledBackgroundColor: AppPalette.feedBg,
+                  foregroundColor: Colors.white,
+                  disabledForegroundColor: AppPalette.textMuted,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: calling
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.call_rounded, size: 18),
+                label: Text(calling ? 'Wait' : 'Call'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
