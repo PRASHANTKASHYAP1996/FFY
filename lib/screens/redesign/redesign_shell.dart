@@ -909,36 +909,26 @@ class _DiscoverMessage extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Me (own profile + wallet + settings hub)
-// ---------------------------------------------------------------------------
+/// Listener availability switch, shared by the Me and Call tabs. Toggling off
+/// hides the listener's online state and makes new calls fail readiness ("not
+/// available right now"); it does not touch listener mode or discoverability.
+/// Backed by UserRepository.setAvailability; the parent's watchMe stream
+/// supplies [available] and reflects each write.
+class _AvailabilityCard extends StatefulWidget {
+  const _AvailabilityCard({required this.available});
 
-class _MePage extends StatefulWidget {
-  const _MePage();
+  final bool available;
 
   @override
-  State<_MePage> createState() => _MePageState();
+  State<_AvailabilityCard> createState() => _AvailabilityCardState();
 }
 
-class _MePageState extends State<_MePage> {
-  final Stream<AppUserModel?> _me = UserRepository.instance.watchMe();
-  bool _availabilityBusy = false;
+class _AvailabilityCardState extends State<_AvailabilityCard> {
+  bool _busy = false;
 
-  void _open(Widget screen) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
-  }
-
-  Future<void> _logout() async {
-    await UserRepository.instance.signOut();
-  }
-
-  /// Listeners can step away and come back. Toggling off hides their online
-  /// state and makes new calls fail readiness ("not available right now"); it
-  /// does not touch listener mode or discoverability. Backed by the existing
-  /// UserRepository.setAvailability; the watchMe stream reflects the write.
-  Future<void> _setAvailability(bool value) async {
-    if (_availabilityBusy) return;
-    setState(() => _availabilityBusy = true);
+  Future<void> _set(bool value) async {
+    if (_busy) return;
+    setState(() => _busy = true);
     try {
       await UserRepository.instance.setAvailability(value);
     } catch (_) {
@@ -949,12 +939,13 @@ class _MePageState extends State<_MePage> {
         ),
       );
     } finally {
-      if (mounted) setState(() => _availabilityBusy = false);
+      if (mounted) setState(() => _busy = false);
     }
   }
 
-  Widget _availabilityCard(AppUserModel me) {
-    final available = me.isAvailable;
+  @override
+  Widget build(BuildContext context) {
+    final available = widget.available;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: AppPalette.cardDecoration(radius: 16),
@@ -1007,11 +998,34 @@ class _MePageState extends State<_MePage> {
           const SizedBox(width: 8),
           Switch(
             value: available,
-            onChanged: _availabilityBusy ? null : _setAvailability,
+            onChanged: _busy ? null : _set,
           ),
         ],
       ),
     );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Me (own profile + wallet + settings hub)
+// ---------------------------------------------------------------------------
+
+class _MePage extends StatefulWidget {
+  const _MePage();
+
+  @override
+  State<_MePage> createState() => _MePageState();
+}
+
+class _MePageState extends State<_MePage> {
+  final Stream<AppUserModel?> _me = UserRepository.instance.watchMe();
+
+  void _open(Widget screen) {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+  }
+
+  Future<void> _logout() async {
+    await UserRepository.instance.signOut();
   }
 
   @override
@@ -1063,7 +1077,7 @@ class _MePageState extends State<_MePage> {
               ),
               if (me != null && me.isListener) ...[
                 const SizedBox(height: 16),
-                _availabilityCard(me),
+                _AvailabilityCard(available: me.isAvailable),
               ],
               const SizedBox(height: 18),
               Row(
@@ -1584,6 +1598,11 @@ class _CallPageState extends State<_CallPage> {
           return ListView(
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
             children: [
+              // Listeners manage whether they're taking calls right here.
+              if (me != null && me.isListener) ...[
+                _AvailabilityCard(available: me.isAvailable),
+                const SizedBox(height: 22),
+              ],
               _hero(),
               const SizedBox(height: 26),
               _quickCallSection(me),
