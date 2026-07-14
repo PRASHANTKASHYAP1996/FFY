@@ -652,6 +652,7 @@ class _MePage extends StatefulWidget {
 
 class _MePageState extends State<_MePage> {
   final Stream<AppUserModel?> _me = UserRepository.instance.watchMe();
+  bool _availabilityBusy = false;
 
   void _open(Widget screen) {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
@@ -659,6 +660,88 @@ class _MePageState extends State<_MePage> {
 
   Future<void> _logout() async {
     await UserRepository.instance.signOut();
+  }
+
+  /// Listeners can step away and come back. Toggling off hides their online
+  /// state and makes new calls fail readiness ("not available right now"); it
+  /// does not touch listener mode or discoverability. Backed by the existing
+  /// UserRepository.setAvailability; the watchMe stream reflects the write.
+  Future<void> _setAvailability(bool value) async {
+    if (_availabilityBusy) return;
+    setState(() => _availabilityBusy = true);
+    try {
+      await UserRepository.instance.setAvailability(value);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not update availability. Please try again.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _availabilityBusy = false);
+    }
+  }
+
+  Widget _availabilityCard(AppUserModel me) {
+    final available = me.isAvailable;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: AppPalette.cardDecoration(radius: 16),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: available
+                  ? AppPalette.online.withValues(alpha: 0.14)
+                  : AppPalette.feedBg,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              available
+                  ? Icons.podcasts_rounded
+                  : Icons.pause_circle_outline_rounded,
+              color: available ? AppPalette.online : AppPalette.textMuted,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  available ? 'Available now' : 'Unavailable',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: AppPalette.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  available
+                      ? 'People see you online and can start calls.'
+                      : "You're hidden as online and new calls are paused.",
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    height: 1.3,
+                    color: AppPalette.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Switch(
+            value: available,
+            onChanged: _availabilityBusy ? null : _setAvailability,
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -697,9 +780,7 @@ class _MePageState extends State<_MePage> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          me?.isListener == true
-                              ? 'Listener mode: on'
-                              : 'Member',
+                          me?.isListener == true ? 'Listener' : 'Member',
                           style: const TextStyle(
                             fontSize: 12.5,
                             color: AppPalette.textSecondary,
@@ -710,6 +791,10 @@ class _MePageState extends State<_MePage> {
                   ),
                 ],
               ),
+              if (me != null && me.isListener) ...[
+                const SizedBox(height: 16),
+                _availabilityCard(me),
+              ],
               const SizedBox(height: 18),
               Row(
                 children: [
