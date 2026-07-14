@@ -446,156 +446,153 @@ class EarningsScreen extends StatelessWidget {
                   surfaceTintColor: Colors.transparent,
                   title: const Text('Earnings & Safety'),
                 ),
-                body: Theme(
-                  data: AppPalette.lightSheetTheme(context),
-                  child: DecoratedBox(
-                    decoration: const BoxDecoration(color: AppPalette.pageBg),
-                    child: ListView(
-                      padding: const EdgeInsets.all(16),
-                      children: [
-                        _activeCallBanner(context, session),
-                        if (session.active) const SizedBox(height: 12),
-                        _sectionCard(
-                          title: 'Earnings overview',
-                          subtitle:
-                              'Listener-side earnings and settlement overview.',
-                          children: [
-                            _statTile(
-                              label: 'Current earnings credits',
-                              value: formatWalletAmount(me.earningsCredits),
-                              subtitle: 'Visible earned balance in app',
-                              highlight: true,
+                body: DecoratedBox(
+                  decoration: const BoxDecoration(color: AppPalette.pageBg),
+                  child: ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      _activeCallBanner(context, session),
+                      if (session.active) const SizedBox(height: 12),
+                      _sectionCard(
+                        title: 'Earnings overview',
+                        subtitle:
+                            'Listener-side earnings and settlement overview.',
+                        children: [
+                          _statTile(
+                            label: 'Current earnings credits',
+                            value: formatWalletAmount(me.earningsCredits),
+                            subtitle: 'Visible earned balance in app',
+                            highlight: true,
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _statTile(
+                                  label: 'Credited total',
+                                  value: formatWalletAmount(totalCredited),
+                                  subtitle: 'Settled listener earnings',
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _statTile(
+                                  label: 'Pending total',
+                                  value: formatWalletAmount(totalPending),
+                                  subtitle: 'Awaiting settlement',
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _summaryChip(
+                                  'Ended calls', '${endedCalls.length}'),
+                              _summaryChip('Paid calls', '$paidCalls'),
+                              _summaryChip('Free calls', '$freeCalls'),
+                              _summaryChip('Settled', '$settledCalls'),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      _sectionCard(
+                        title: 'Payout availability',
+                        subtitle:
+                            'See what support options are currently available for withdrawals.',
+                        children: [
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _noticeChip(
+                                'Withdrawal requests',
+                                bg: const Color(0xFFF59E0B)
+                                    .withValues(alpha: 0.14),
+                                fg: const Color(0xFFB45309),
+                              ),
+                              _noticeChip(
+                                'Processing may vary',
+                                bg: const Color(0xFFDC2626)
+                                    .withValues(alpha: 0.12),
+                                fg: const Color(0xFFDC2626),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'This screen shows earnings and settlement status. '
+                            'Withdrawal requests are handled through the support '
+                            'options currently available in Friendify.',
+                            style: TextStyle(
+                              color: AppPalette.textSecondary,
+                              fontWeight: FontWeight.w600,
+                              height: 1.35,
                             ),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _statTile(
-                                    label: 'Credited total',
-                                    value: formatWalletAmount(totalCredited),
-                                    subtitle: 'Settled listener earnings',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      _sectionCard(
+                        title: 'Recent earning calls',
+                        subtitle: 'Latest listener-side earning outcomes.',
+                        children: endedCalls.isEmpty
+                            ? const [
+                                Text(
+                                  'No completed calls yet.',
+                                  style: TextStyle(
+                                    color: AppPalette.textSecondary,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: _statTile(
-                                    label: 'Pending total',
-                                    value: formatWalletAmount(totalPending),
-                                    subtitle: 'Awaiting settlement',
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                _summaryChip(
-                                    'Ended calls', '${endedCalls.length}'),
-                                _summaryChip('Paid calls', '$paidCalls'),
-                                _summaryChip('Free calls', '$freeCalls'),
-                                _summaryChip('Settled', '$settledCalls'),
-                              ],
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        _sectionCard(
-                          title: 'Payout availability',
-                          subtitle:
-                              'See what support options are currently available for withdrawals.',
-                          children: [
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                _noticeChip(
-                                  'Withdrawal requests',
-                                  bg: const Color(0xFFF59E0B)
-                                      .withValues(alpha: 0.14),
-                                  fg: const Color(0xFFB45309),
-                                ),
-                                _noticeChip(
-                                  'Processing may vary',
-                                  bg: const Color(0xFFDC2626)
-                                      .withValues(alpha: 0.12),
-                                  fg: const Color(0xFFDC2626),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
+                              ]
+                            : endedCalls.take(12).map(_callCard).toList(),
+                      ),
+                      const SizedBox(height: 12),
+                      _sectionCard(
+                        title: 'Blocked users',
+                        subtitle:
+                            'People you have blocked from your own account side.',
+                        children: [
+                          if (blocked.isEmpty)
                             const Text(
-                              'This screen shows earnings and settlement status. '
-                              'Withdrawal requests are handled through the support '
-                              'options currently available in Friendify.',
+                              'No blocked users.',
                               style: TextStyle(
                                 color: AppPalette.textSecondary,
                                 fontWeight: FontWeight.w600,
-                                height: 1.35,
+                              ),
+                            )
+                          else
+                            ...blocked.map(
+                              (id) => ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: const CircleAvatar(
+                                  backgroundColor: Color(0xFFDC2626),
+                                  child: Icon(
+                                    Icons.block,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                title: Text(
+                                  id,
+                                  style: const TextStyle(
+                                    color: AppPalette.textPrimary,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                trailing: TextButton(
+                                  onPressed: () =>
+                                      FirestoreService.unblockUser(id),
+                                  child: const Text('Unblock'),
+                                ),
                               ),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        _sectionCard(
-                          title: 'Recent earning calls',
-                          subtitle: 'Latest listener-side earning outcomes.',
-                          children: endedCalls.isEmpty
-                              ? const [
-                                  Text(
-                                    'No completed calls yet.',
-                                    style: TextStyle(
-                                      color: AppPalette.textSecondary,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ]
-                              : endedCalls.take(12).map(_callCard).toList(),
-                        ),
-                        const SizedBox(height: 12),
-                        _sectionCard(
-                          title: 'Blocked users',
-                          subtitle:
-                              'People you have blocked from your own account side.',
-                          children: [
-                            if (blocked.isEmpty)
-                              const Text(
-                                'No blocked users.',
-                                style: TextStyle(
-                                  color: AppPalette.textSecondary,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              )
-                            else
-                              ...blocked.map(
-                                (id) => ListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  leading: const CircleAvatar(
-                                    backgroundColor: Color(0xFFDC2626),
-                                    child: Icon(
-                                      Icons.block,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                  title: Text(
-                                    id,
-                                    style: const TextStyle(
-                                      color: AppPalette.textPrimary,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                  trailing: TextButton(
-                                    onPressed: () =>
-                                        FirestoreService.unblockUser(id),
-                                    child: const Text('Unblock'),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ),

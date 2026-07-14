@@ -430,40 +430,37 @@ class _CallerWaitingScreenState extends State<CallerWaitingScreen>
       backgroundColor: AppPalette.card,
       barrierColor: Colors.black.withValues(alpha: 0.45),
       builder: (sheetContext) {
-        return Theme(
-          data: AppPalette.lightSheetTheme(sheetContext),
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                      color: AppPalette.textPrimary,
-                    ),
-                    textAlign: TextAlign.center,
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    color: AppPalette.textPrimary,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      color: AppPalette.textSecondary,
-                      fontWeight: FontWeight.w600,
-                      height: 1.35,
-                    ),
-                    textAlign: TextAlign.center,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: AppPalette.textSecondary,
+                    fontWeight: FontWeight.w600,
+                    height: 1.35,
                   ),
-                  const SizedBox(height: 14),
-                  FilledButton(
-                    onPressed: () => Navigator.pop(sheetContext),
-                    child: Text(cta),
-                  ),
-                ],
-              ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 14),
+                FilledButton(
+                  onPressed: () => Navigator.pop(sheetContext),
+                  child: Text(cta),
+                ),
+              ],
             ),
           ),
         );

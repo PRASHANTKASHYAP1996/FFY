@@ -4151,120 +4151,117 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
             ? 'We stopped before opening the wrong conversation path. You can open the existing conversation safely or go back.'
             : 'Something went wrong while getting this chat ready.';
 
-    return Theme(
-      data: AppPalette.lightSheetTheme(context),
-      child: SafeArea(
-        top: false,
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 78,
-                    height: 78,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFDC2626).withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(
-                        color: const Color(0xFFDC2626).withValues(alpha: 0.22),
-                      ),
-                    ),
-                    child: const Icon(
-                      Icons.error_outline_rounded,
-                      size: 38,
-                      color: Color(0xFFDC2626),
+    return SafeArea(
+      top: false,
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 78,
+                  height: 78,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDC2626).withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: const Color(0xFFDC2626).withValues(alpha: 0.22),
                     ),
                   ),
-                  const SizedBox(height: 18),
-                  Text(
-                    title,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 21,
-                      fontWeight: FontWeight.w900,
-                      color: AppPalette.textPrimary,
-                    ),
+                  child: const Icon(
+                    Icons.error_outline_rounded,
+                    size: 38,
+                    color: Color(0xFFDC2626),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    subtitle,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: AppPalette.textSecondary,
-                      fontWeight: FontWeight.w600,
-                      height: 1.45,
-                    ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 21,
+                    fontWeight: FontWeight.w900,
+                    color: AppPalette.textPrimary,
                   ),
-                  if ((_bootstrapErrorMessage ?? '').trim().isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppPalette.feedBg,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: AppPalette.border,
-                        ),
-                      ),
-                      child: Text(
-                        _bootstrapErrorMessage!,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: AppPalette.textSecondary,
-                          fontWeight: FontWeight.w600,
-                          height: 1.35,
-                        ),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  if (canOpenExisting)
-                    ElevatedButton.icon(
-                      onPressed: _openExistingConversationDirection,
-                      icon: const Icon(Icons.chat_bubble_outline_rounded),
-                      label: const Text('Open conversation'),
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 14,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                    )
-                  else
-                    ElevatedButton.icon(
-                      onPressed: _retryBootstrap,
-                      icon: const Icon(Icons.refresh_rounded),
-                      label: const Text('Retry'),
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 14,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                    ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  subtitle,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: AppPalette.textSecondary,
+                    fontWeight: FontWeight.w600,
+                    height: 1.45,
+                  ),
+                ),
+                if ((_bootstrapErrorMessage ?? '').trim().isNotEmpty) ...[
                   const SizedBox(height: 10),
-                  TextButton(
-                    onPressed: () {
-                      _dismissComposerFocus();
-                      if (Navigator.of(context).canPop()) {
-                        Navigator.of(context).pop();
-                      }
-                    },
-                    child: const Text('Back'),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppPalette.feedBg,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: AppPalette.border,
+                      ),
+                    ),
+                    child: Text(
+                      _bootstrapErrorMessage!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: AppPalette.textSecondary,
+                        fontWeight: FontWeight.w600,
+                        height: 1.35,
+                      ),
+                    ),
                   ),
                 ],
-              ),
+                const SizedBox(height: 16),
+                if (canOpenExisting)
+                  ElevatedButton.icon(
+                    onPressed: _openExistingConversationDirection,
+                    icon: const Icon(Icons.chat_bubble_outline_rounded),
+                    label: const Text('Open conversation'),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 14,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  )
+                else
+                  ElevatedButton.icon(
+                    onPressed: _retryBootstrap,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Retry'),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 14,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 10),
+                TextButton(
+                  onPressed: () {
+                    _dismissComposerFocus();
+                    if (Navigator.of(context).canPop()) {
+                      Navigator.of(context).pop();
+                    }
+                  },
+                  child: const Text('Back'),
+                ),
+              ],
             ),
           ),
         ),

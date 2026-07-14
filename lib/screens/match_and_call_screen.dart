@@ -2135,225 +2135,217 @@ class _MatchAndCallScreenState extends State<MatchAndCallScreen> {
               foregroundColor: AppPalette.textPrimary,
               title: const Text('Search'),
             ),
-            body: Theme(
-              data: AppPalette.lightSheetTheme(context),
-              child: DecoratedBox(
-                decoration: const BoxDecoration(color: AppPalette.pageBg),
-                child: StreamBuilder<AppUserModel?>(
-                  stream: _userRepository.watchMe(),
-                  builder: (_, meSnap) {
-                    if (!meSnap.hasData) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
+            body: DecoratedBox(
+              decoration: const BoxDecoration(color: AppPalette.pageBg),
+              child: StreamBuilder<AppUserModel?>(
+                stream: _userRepository.watchMe(),
+                builder: (_, meSnap) {
+                  if (!meSnap.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
-                    final me = meSnap.data!;
-                    final followingSet =
-                        me.following.map((e) => e.trim()).toSet();
-                    final myAvailable = me.usableCredits;
+                  final me = meSnap.data!;
+                  final followingSet =
+                      me.following.map((e) => e.trim()).toSet();
+                  final myAvailable = me.usableCredits;
 
-                    return StreamBuilder<List<AppUserModel>>(
-                      stream:
-                          _userRepository.watchAvailableListeners(limit: 200),
-                      builder: (_, snap) {
-                        if (!snap.hasData) {
-                          return const Center(
-                              child: CircularProgressIndicator());
-                        }
+                  return StreamBuilder<List<AppUserModel>>(
+                    stream: _userRepository.watchAvailableListeners(limit: 200),
+                    builder: (_, snap) {
+                      if (!snap.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
 
-                        final allListeners = snap.data!;
-                        final listenerOnly = List<AppUserModel>.from(
-                          allListeners,
-                          growable: false,
-                        );
+                      final allListeners = snap.data!;
+                      final listenerOnly = List<AppUserModel>.from(
+                        allListeners,
+                        growable: false,
+                      );
 
-                        final topicOptions = [
-                          'All',
-                          ..._collectAllTopics(listenerOnly),
-                        ];
-                        final languageOptions = [
-                          'All',
-                          ..._collectAllLanguages(listenerOnly),
-                        ];
-                        final genderOptions = [
-                          'All',
-                          ..._collectAllGenders(listenerOnly),
-                        ];
-                        final locationOptions = [
-                          'All',
-                          ..._collectAllLocations(listenerOnly),
-                        ];
+                      final topicOptions = [
+                        'All',
+                        ..._collectAllTopics(listenerOnly),
+                      ];
+                      final languageOptions = [
+                        'All',
+                        ..._collectAllLanguages(listenerOnly),
+                      ];
+                      final genderOptions = [
+                        'All',
+                        ..._collectAllGenders(listenerOnly),
+                      ];
+                      final locationOptions = [
+                        'All',
+                        ..._collectAllLocations(listenerOnly),
+                      ];
 
-                        final safeSelectedTopic =
-                            topicOptions.contains(selectedTopic)
-                                ? selectedTopic
-                                : 'All';
-                        final safeSelectedLanguage =
-                            languageOptions.contains(selectedLanguage)
-                                ? selectedLanguage
-                                : 'All';
-                        final safeSelectedGender =
-                            genderOptions.contains(selectedGender)
-                                ? selectedGender
-                                : 'All';
-                        final safeSelectedLocation =
-                            locationOptions.contains(selectedLocation)
-                                ? selectedLocation
-                                : 'All';
+                      final safeSelectedTopic =
+                          topicOptions.contains(selectedTopic)
+                              ? selectedTopic
+                              : 'All';
+                      final safeSelectedLanguage =
+                          languageOptions.contains(selectedLanguage)
+                              ? selectedLanguage
+                              : 'All';
+                      final safeSelectedGender =
+                          genderOptions.contains(selectedGender)
+                              ? selectedGender
+                              : 'All';
+                      final safeSelectedLocation =
+                          locationOptions.contains(selectedLocation)
+                              ? selectedLocation
+                              : 'All';
 
-                        final filtered = _applyFilters(
-                          listeners: listenerOnly,
-                          myUid: me.uid,
-                          me: me,
-                          effectiveTopic: safeSelectedTopic,
-                          effectiveLanguage: safeSelectedLanguage,
-                          effectiveGender: safeSelectedGender,
-                          effectiveLocation: safeSelectedLocation,
-                        ).toList();
+                      final filtered = _applyFilters(
+                        listeners: listenerOnly,
+                        myUid: me.uid,
+                        me: me,
+                        effectiveTopic: safeSelectedTopic,
+                        effectiveLanguage: safeSelectedLanguage,
+                        effectiveGender: safeSelectedGender,
+                        effectiveLocation: safeSelectedLocation,
+                      ).toList();
 
-                        _sortListeners(
-                          listeners: filtered,
-                          me: me,
-                        );
+                      _sortListeners(
+                        listeners: filtered,
+                        me: me,
+                      );
 
-                        final topListeners = _topListeners(filtered);
-                        final regularListeners = _regularListenersWithoutTop(
-                          filtered: filtered,
-                          topListeners: topListeners,
-                        );
+                      final topListeners = _topListeners(filtered);
+                      final regularListeners = _regularListenersWithoutTop(
+                        filtered: filtered,
+                        topListeners: topListeners,
+                      );
 
-                        final totalListeners = listenerOnly.length;
-                        final onlineListeners = listenerOnly
-                            .where((e) => _availabilityForUser(e).canCallNow)
-                            .length;
-                        final favoriteCount =
-                            _safeStringList(me.favoriteListeners).length;
+                      final totalListeners = listenerOnly.length;
+                      final onlineListeners = listenerOnly
+                          .where((e) => _availabilityForUser(e).canCallNow)
+                          .length;
+                      final favoriteCount =
+                          _safeStringList(me.favoriteListeners).length;
 
-                        return ListView(
-                          keyboardDismissBehavior:
-                              ScrollViewKeyboardDismissBehavior.onDrag,
-                          padding: const EdgeInsets.fromLTRB(14, 10, 14, 20),
-                          children: [
-                            _topDiscoveryCard(
-                              total: totalListeners,
-                              matching: filtered.length,
-                              online: onlineListeners,
-                              favorites: favoriteCount,
-                              usableCredit: myAvailable,
+                      return ListView(
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        padding: const EdgeInsets.fromLTRB(14, 10, 14, 20),
+                        children: [
+                          _topDiscoveryCard(
+                            total: totalListeners,
+                            matching: filtered.length,
+                            online: onlineListeners,
+                            favorites: favoriteCount,
+                            usableCredit: myAvailable,
+                          ),
+                          const SizedBox(height: 12),
+                          _filterCard(
+                            topicOptions: topicOptions,
+                            languageOptions: languageOptions,
+                            genderOptions: genderOptions,
+                            locationOptions: locationOptions,
+                            safeSelectedTopic: safeSelectedTopic,
+                            safeSelectedLanguage: safeSelectedLanguage,
+                            safeSelectedGender: safeSelectedGender,
+                            safeSelectedLocation: safeSelectedLocation,
+                            myAvailable: myAvailable,
+                          ),
+                          const SizedBox(height: 16),
+                          if (_hasBlockingCallState) ...[
+                            Container(
+                              decoration: AppPalette.cardDecoration(radius: 18),
+                              child: const Padding(
+                                padding: EdgeInsets.all(14),
+                                child: Text(
+                                  'Finish your current call before starting another one.',
+                                  style: TextStyle(
+                                    color: AppPalette.blue,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
                             ),
-                            const SizedBox(height: 12),
-                            _filterCard(
-                              topicOptions: topicOptions,
-                              languageOptions: languageOptions,
-                              genderOptions: genderOptions,
-                              locationOptions: locationOptions,
-                              safeSelectedTopic: safeSelectedTopic,
-                              safeSelectedLanguage: safeSelectedLanguage,
-                              safeSelectedGender: safeSelectedGender,
-                              safeSelectedLocation: safeSelectedLocation,
+                            const SizedBox(height: 14),
+                          ],
+                          if (topListeners.isNotEmpty) ...[
+                            _topListenersSection(
+                              topListeners: topListeners,
+                              me: me,
                               myAvailable: myAvailable,
                             ),
-                            const SizedBox(height: 16),
-                            if (_hasBlockingCallState) ...[
-                              Container(
-                                decoration:
-                                    AppPalette.cardDecoration(radius: 18),
-                                child: const Padding(
-                                  padding: EdgeInsets.all(14),
-                                  child: Text(
-                                    'Finish your current call before starting another one.',
-                                    style: TextStyle(
-                                      color: AppPalette.blue,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 14),
-                            ],
-                            if (topListeners.isNotEmpty) ...[
-                              _topListenersSection(
-                                topListeners: topListeners,
-                                me: me,
-                                myAvailable: myAvailable,
-                              ),
-                              const SizedBox(height: 18),
-                            ],
-                            _sectionTitle(
-                              topListeners.isNotEmpty
-                                  ? 'More listeners'
-                                  : 'Listeners',
-                              subtitle:
-                                  '${filtered.length} result${filtered.length == 1 ? '' : 's'}',
-                            ),
-                            const SizedBox(height: 10),
-                            if (filtered.isEmpty)
-                              SizedBox(
-                                height: 280,
-                                child: _emptyState(
-                                  totalListeners: totalListeners,
-                                  onlineListeners: onlineListeners,
-                                ),
-                              )
-                            else if (regularListeners.isEmpty &&
-                                topListeners.isNotEmpty)
-                              Container(
-                                decoration:
-                                    AppPalette.cardDecoration(radius: 18),
-                                child: const Padding(
-                                  padding: EdgeInsets.all(18),
-                                  child: Column(
-                                    children: [
-                                      Icon(
-                                        Icons.emoji_events_outlined,
-                                        size: 42,
-                                        color: Color(0xFFF59E0B),
-                                      ),
-                                      SizedBox(height: 10),
-                                      Text(
-                                        'Only top listeners match these filters.',
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w900,
-                                          fontSize: 16,
-                                          color: AppPalette.textPrimary,
-                                        ),
-                                      ),
-                                      SizedBox(height: 6),
-                                      Text(
-                                        'Try changing your filters to see more people.',
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          color: AppPalette.textSecondary,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              )
-                            else
-                              ...List.generate(regularListeners.length, (i) {
-                                final user = regularListeners[i];
-                                return Padding(
-                                  padding: EdgeInsets.only(
-                                    bottom: i == regularListeners.length - 1
-                                        ? 0
-                                        : 10,
-                                  ),
-                                  child: _listenerCard(
-                                    user: user,
-                                    me: me,
-                                    followingSet: followingSet,
-                                    myAvailable: myAvailable,
-                                  ),
-                                );
-                              }),
+                            const SizedBox(height: 18),
                           ],
-                        );
-                      },
-                    );
-                  },
-                ),
+                          _sectionTitle(
+                            topListeners.isNotEmpty
+                                ? 'More listeners'
+                                : 'Listeners',
+                            subtitle:
+                                '${filtered.length} result${filtered.length == 1 ? '' : 's'}',
+                          ),
+                          const SizedBox(height: 10),
+                          if (filtered.isEmpty)
+                            SizedBox(
+                              height: 280,
+                              child: _emptyState(
+                                totalListeners: totalListeners,
+                                onlineListeners: onlineListeners,
+                              ),
+                            )
+                          else if (regularListeners.isEmpty &&
+                              topListeners.isNotEmpty)
+                            Container(
+                              decoration: AppPalette.cardDecoration(radius: 18),
+                              child: const Padding(
+                                padding: EdgeInsets.all(18),
+                                child: Column(
+                                  children: [
+                                    Icon(
+                                      Icons.emoji_events_outlined,
+                                      size: 42,
+                                      color: Color(0xFFF59E0B),
+                                    ),
+                                    SizedBox(height: 10),
+                                    Text(
+                                      'Only top listeners match these filters.',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 16,
+                                        color: AppPalette.textPrimary,
+                                      ),
+                                    ),
+                                    SizedBox(height: 6),
+                                    Text(
+                                      'Try changing your filters to see more people.',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: AppPalette.textSecondary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          else
+                            ...List.generate(regularListeners.length, (i) {
+                              final user = regularListeners[i];
+                              return Padding(
+                                padding: EdgeInsets.only(
+                                  bottom:
+                                      i == regularListeners.length - 1 ? 0 : 10,
+                                ),
+                                child: _listenerCard(
+                                  user: user,
+                                  me: me,
+                                  followingSet: followingSet,
+                                  myAvailable: myAvailable,
+                                ),
+                              );
+                            }),
+                        ],
+                      );
+                    },
+                  );
+                },
               ),
             ),
           ),

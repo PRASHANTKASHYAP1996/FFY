@@ -135,8 +135,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _toggleCsv(TextEditingController c, String value) {
     final items = _splitCsv(c.text);
-    final idx =
-        items.indexWhere((i) => i.toLowerCase() == value.toLowerCase());
+    final idx = items.indexWhere((i) => i.toLowerCase() == value.toLowerCase());
     if (idx >= 0) {
       items.removeAt(idx);
     } else {
@@ -162,8 +161,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             borderRadius: BorderRadius.circular(999),
             onTap: () => _toggleCsv(c, option),
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
               decoration: BoxDecoration(
                 color: selected ? AppPalette.blue : AppPalette.blueTint,
                 borderRadius: BorderRadius.circular(999),
@@ -574,97 +572,93 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 }
               }
 
-              return Theme(
-                data: _lightSheetTheme(sheetContext),
-                child: SafeArea(
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      8,
-                      16,
-                      MediaQuery.of(sheetContext).viewInsets.bottom + 20,
-                    ),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Delete Account Request',
+              return SafeArea(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    8,
+                    16,
+                    MediaQuery.of(sheetContext).viewInsets.bottom + 20,
+                  ),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Delete Account Request',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF111827),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF2F2),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFFFECACA)),
+                          ),
+                          child: const Text(
+                            'This screen submits a delete-account request for review. It does not instantly delete your account from the device. Some records may be retained for payment, safety, fraud prevention, legal, or support reasons.',
                             style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                              color: Color(0xFF111827),
+                              color: Color(0xFF7F1D1D),
+                              fontWeight: FontWeight.w700,
+                              height: 1.4,
                             ),
                           ),
-                          const SizedBox(height: 10),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFEF2F2),
-                              borderRadius: BorderRadius.circular(16),
-                              border:
-                                  Border.all(color: const Color(0xFFFECACA)),
-                            ),
-                            child: const Text(
-                              'This screen submits a delete-account request for review. It does not instantly delete your account from the device. Some records may be retained for payment, safety, fraud prevention, legal, or support reasons.',
-                              style: TextStyle(
-                                color: Color(0xFF7F1D1D),
-                                fontWeight: FontWeight.w700,
-                                height: 1.4,
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: reasonController,
+                          enabled: !submitBusy,
+                          maxLength: 120,
+                          decoration: const InputDecoration(
+                            labelText: 'Reason',
+                            hintText:
+                                'Example: I no longer want to use the app',
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: noteController,
+                          enabled: !submitBusy,
+                          minLines: 3,
+                          maxLines: 5,
+                          maxLength: 500,
+                          decoration: const InputDecoration(
+                            labelText: 'Additional note (optional)',
+                            hintText:
+                                'Add anything support/admin should know before processing the request.',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: submitBusy
+                                    ? null
+                                    : () => Navigator.of(sheetContext).pop(),
+                                child: const Text('Cancel'),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 10),
-                          TextField(
-                            controller: reasonController,
-                            enabled: !submitBusy,
-                            maxLength: 120,
-                            decoration: const InputDecoration(
-                              labelText: 'Reason',
-                              hintText:
-                                  'Example: I no longer want to use the app',
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          TextField(
-                            controller: noteController,
-                            enabled: !submitBusy,
-                            minLines: 3,
-                            maxLines: 5,
-                            maxLength: 500,
-                            decoration: const InputDecoration(
-                              labelText: 'Additional note (optional)',
-                              hintText:
-                                  'Add anything support/admin should know before processing the request.',
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton(
-                                  onPressed: submitBusy
-                                      ? null
-                                      : () => Navigator.of(sheetContext).pop(),
-                                  child: const Text('Cancel'),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: FilledButton(
+                                onPressed: submitBusy ? null : submit,
+                                child: Text(
+                                  submitBusy
+                                      ? 'Submitting...'
+                                      : 'Submit Request',
                                 ),
                               ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: FilledButton(
-                                  onPressed: submitBusy ? null : submit,
-                                  child: Text(
-                                    submitBusy
-                                        ? 'Submitting...'
-                                        : 'Submit Request',
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -1717,72 +1711,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // The global input theme uses translucent-white fills/borders meant for dark
-  // surfaces; on the light sheets below they'd be invisible. This overrides it
-  // with visible light-theme inputs for the editor sheets.
-  InputDecorationTheme _lightInputTheme() {
-    return InputDecorationTheme(
-      filled: true,
-      fillColor: AppPalette.feedBg,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-      labelStyle: const TextStyle(
-        color: AppPalette.textSecondary,
-        fontWeight: FontWeight.w600,
-      ),
-      hintStyle: const TextStyle(
-        color: AppPalette.textMuted,
-        fontWeight: FontWeight.w500,
-      ),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: AppPalette.border),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: AppPalette.border),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: AppPalette.blue, width: 1.4),
-      ),
-    );
-  }
-
-  // Full light-theme override for the bottom sheets: the global filled/outlined
-  // button themes use purple/translucent-white styling meant for dark surfaces
-  // (outlined buttons would be invisible on white). This makes them blue and
-  // visible alongside the light inputs.
-  ThemeData _lightSheetTheme(BuildContext ctx) {
-    return Theme.of(ctx).copyWith(
-      inputDecorationTheme: _lightInputTheme(),
-      filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          elevation: 0,
-          backgroundColor: AppPalette.blue,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
-        ),
-      ),
-      outlinedButtonTheme: OutlinedButtonThemeData(
-        style: OutlinedButton.styleFrom(
-          elevation: 0,
-          foregroundColor: AppPalette.blue,
-          side: const BorderSide(color: AppPalette.border),
-          backgroundColor: Colors.transparent,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
-        ),
-      ),
-    );
-  }
-
   void _openProfileEditor(AppUserModel me, {required bool accountOnly}) {
     final allowedRates = _userRepository.allowedRatesForFollowers(
       me.followersCount,
@@ -1799,203 +1727,195 @@ class _ProfileScreenState extends State<ProfileScreen> {
       builder: (sheetContext) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
-            return Theme(
-              data: _lightSheetTheme(sheetContext),
-              child: SafeArea(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    4,
-                    16,
-                    MediaQuery.of(sheetContext).viewInsets.bottom + 18,
-                  ),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          accountOnly ? 'Edit account details' : 'Edit profile',
-                          style: const TextStyle(
-                            color: AppPalette.textPrimary,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                          ),
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  4,
+                  16,
+                  MediaQuery.of(sheetContext).viewInsets.bottom + 18,
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        accountOnly ? 'Edit account details' : 'Edit profile',
+                        style: const TextStyle(
+                          color: AppPalette.textPrimary,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      if (!accountOnly) ...[
+                        Row(
+                          children: [
+                            Expanded(
+                              child: FilledButton.icon(
+                                onPressed: _saving ? null : _pickAndUploadPhoto,
+                                icon: const Icon(Icons.photo_outlined),
+                                label: Text(
+                                  _saving ? 'Please wait...' : 'Upload Photo',
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed:
+                                    (_saving || me.photoURL.trim().isEmpty)
+                                        ? null
+                                        : _removePhoto,
+                                icon: const Icon(Icons.delete_outline_rounded),
+                                label: const Text('Remove'),
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 14),
-                        if (!accountOnly) ...[
-                          Row(
-                            children: [
-                              Expanded(
-                                child: FilledButton.icon(
-                                  onPressed:
-                                      _saving ? null : _pickAndUploadPhoto,
-                                  icon: const Icon(Icons.photo_outlined),
-                                  label: Text(
-                                    _saving ? 'Please wait...' : 'Upload Photo',
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed:
-                                      (_saving || me.photoURL.trim().isEmpty)
-                                          ? null
-                                          : _removePhoto,
-                                  icon:
-                                      const Icon(Icons.delete_outline_rounded),
-                                  label: const Text('Remove'),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-                          _label('Display Name'),
-                          const SizedBox(height: 8),
-                          TextField(
-                            controller: _name,
-                            textInputAction: TextInputAction.next,
-                            maxLength: 40,
-                            decoration: const InputDecoration(
-                              labelText: 'Your name',
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          _label('Bio'),
-                          const SizedBox(height: 8),
-                          TextField(
-                            controller: _bio,
-                            minLines: 3,
-                            maxLines: 4,
-                            maxLength: 280,
-                            decoration: const InputDecoration(
-                              labelText: 'Write a short intro',
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          _label('Topics'),
-                          const SizedBox(height: 8),
-                          TextField(
-                            controller: _topics,
-                            onChanged: (_) => setState(() {}),
-                            decoration: const InputDecoration(
-                              labelText: 'Comma separated topics',
-                            ),
-                          ),
-                          _suggestionChips(_topics, _suggestedTopics),
-                          const SizedBox(height: 10),
-                          _label('Languages'),
-                          const SizedBox(height: 8),
-                          TextField(
-                            controller: _languages,
-                            onChanged: (_) => setState(() {}),
-                            decoration: const InputDecoration(
-                              labelText: 'Comma separated languages',
-                            ),
-                          ),
-                          _suggestionChips(_languages, _suggestedLanguages),
-                        ],
-                        if (accountOnly) ...[
-                          _label('Gender'),
-                          const SizedBox(height: 8),
-                          DropdownButtonFormField<String>(
-                            initialValue:
-                                _selectedGender.isEmpty ? '' : _selectedGender,
-                            decoration: const InputDecoration(
-                              labelText: 'Select gender',
-                            ),
-                            items: const [
-                              DropdownMenuItem(
-                                value: '',
-                                child: Text('Prefer not to say'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'Male',
-                                child: Text('Male'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'Female',
-                                child: Text('Female'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'Others',
-                                child: Text('Others'),
-                              ),
-                            ],
-                            onChanged: _saving
-                                ? null
-                                : (value) {
-                                    setState(
-                                        () => _selectedGender = value ?? '');
-                                    setSheetState(() {});
-                                  },
-                          ),
-                          const SizedBox(height: 10),
-                          _label('Location'),
-                          const SizedBox(height: 8),
-                          TextField(
-                            controller: _city,
-                            textInputAction: TextInputAction.next,
-                            decoration:
-                                const InputDecoration(labelText: 'City'),
-                          ),
-                          const SizedBox(height: 10),
-                          TextField(
-                            controller: _state,
-                            textInputAction: TextInputAction.next,
-                            decoration:
-                                const InputDecoration(labelText: 'State'),
-                          ),
-                          const SizedBox(height: 10),
-                          TextField(
-                            controller: _country,
-                            decoration: const InputDecoration(
-                              labelText: 'Country',
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          _label('Your call rate'),
-                          const SizedBox(height: 8),
-                          DropdownButtonFormField<int>(
-                            initialValue: _selectedRate,
-                            decoration: const InputDecoration(
-                              labelText: 'Visible rate',
-                            ),
-                            items: allowedRates
-                                .map(
-                                  (rate) => DropdownMenuItem<int>(
-                                    value: rate,
-                                    child: Text('Rs $rate / min'),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: _saving
-                                ? null
-                                : (value) {
-                                    if (value == null) return;
-                                    setState(() => _selectedRate = value);
-                                    setSheetState(() {});
-                                  },
-                          ),
-                        ],
-                        const SizedBox(height: 18),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton(
-                            onPressed: _saving
-                                ? null
-                                : () async {
-                                    await _saveAll();
-                                    if (mounted && sheetContext.mounted) {
-                                      Navigator.of(sheetContext).pop();
-                                    }
-                                  },
-                            child: Text(_saving ? 'Saving...' : 'Save'),
+                        _label('Display Name'),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _name,
+                          textInputAction: TextInputAction.next,
+                          maxLength: 40,
+                          decoration: const InputDecoration(
+                            labelText: 'Your name',
                           ),
                         ),
+                        const SizedBox(height: 8),
+                        _label('Bio'),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _bio,
+                          minLines: 3,
+                          maxLines: 4,
+                          maxLength: 280,
+                          decoration: const InputDecoration(
+                            labelText: 'Write a short intro',
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        _label('Topics'),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _topics,
+                          onChanged: (_) => setState(() {}),
+                          decoration: const InputDecoration(
+                            labelText: 'Comma separated topics',
+                          ),
+                        ),
+                        _suggestionChips(_topics, _suggestedTopics),
+                        const SizedBox(height: 10),
+                        _label('Languages'),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _languages,
+                          onChanged: (_) => setState(() {}),
+                          decoration: const InputDecoration(
+                            labelText: 'Comma separated languages',
+                          ),
+                        ),
+                        _suggestionChips(_languages, _suggestedLanguages),
                       ],
-                    ),
+                      if (accountOnly) ...[
+                        _label('Gender'),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<String>(
+                          initialValue:
+                              _selectedGender.isEmpty ? '' : _selectedGender,
+                          decoration: const InputDecoration(
+                            labelText: 'Select gender',
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: '',
+                              child: Text('Prefer not to say'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'Male',
+                              child: Text('Male'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'Female',
+                              child: Text('Female'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'Others',
+                              child: Text('Others'),
+                            ),
+                          ],
+                          onChanged: _saving
+                              ? null
+                              : (value) {
+                                  setState(() => _selectedGender = value ?? '');
+                                  setSheetState(() {});
+                                },
+                        ),
+                        const SizedBox(height: 10),
+                        _label('Location'),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _city,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(labelText: 'City'),
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: _state,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(labelText: 'State'),
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: _country,
+                          decoration: const InputDecoration(
+                            labelText: 'Country',
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        _label('Your call rate'),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<int>(
+                          initialValue: _selectedRate,
+                          decoration: const InputDecoration(
+                            labelText: 'Visible rate',
+                          ),
+                          items: allowedRates
+                              .map(
+                                (rate) => DropdownMenuItem<int>(
+                                  value: rate,
+                                  child: Text('Rs $rate / min'),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: _saving
+                              ? null
+                              : (value) {
+                                  if (value == null) return;
+                                  setState(() => _selectedRate = value);
+                                  setSheetState(() {});
+                                },
+                        ),
+                      ],
+                      const SizedBox(height: 18),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: _saving
+                              ? null
+                              : () async {
+                                  await _saveAll();
+                                  if (mounted && sheetContext.mounted) {
+                                    Navigator.of(sheetContext).pop();
+                                  }
+                                },
+                          child: Text(_saving ? 'Saving...' : 'Save'),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -2163,104 +2083,101 @@ class _ProfileScreenState extends State<ProfileScreen> {
               }
             }
 
-            return Theme(
-              data: _lightSheetTheme(sheetContext),
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  18,
-                  4,
-                  18,
-                  MediaQuery.viewInsetsOf(sheetContext).bottom + 18,
-                ),
-                child: SafeArea(
-                  top: false,
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'New post',
-                          style: TextStyle(
-                            color: AppPalette.textPrimary,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                          ),
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                18,
+                4,
+                18,
+                MediaQuery.viewInsetsOf(sheetContext).bottom + 18,
+              ),
+              child: SafeArea(
+                top: false,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'New post',
+                        style: TextStyle(
+                          color: AppPalette.textPrimary,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
                         ),
-                        const SizedBox(height: 12),
-                        InkWell(
-                          onTap: pickImage,
-                          borderRadius: BorderRadius.circular(18),
-                          child: AspectRatio(
-                            aspectRatio: 1.35,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: AppPalette.feedBg,
-                                borderRadius: BorderRadius.circular(18),
-                                border: Border.all(
-                                  color: AppPalette.border,
-                                ),
-                              ),
-                              clipBehavior: Clip.antiAlias,
-                              child: pickedImage == null
-                                  ? const Center(
-                                      child: Icon(
-                                        Icons.add_photo_alternate_outlined,
-                                        color: AppPalette.blue,
-                                        size: 42,
-                                      ),
-                                    )
-                                  : Image.file(
-                                      File(pickedImage!.path),
-                                      fit: BoxFit.cover,
-                                    ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: controller,
-                          minLines: 2,
-                          maxLines: 4,
-                          maxLength: 180,
-                          onChanged: (_) => setSheetState(() {}),
-                          style: const TextStyle(color: AppPalette.textPrimary),
-                          decoration: InputDecoration(
-                            hintText: 'Write a caption...',
-                            hintStyle: const TextStyle(
-                              color: AppPalette.textMuted,
-                            ),
-                            filled: true,
-                            fillColor: AppPalette.feedBg,
-                            border: OutlineInputBorder(
+                      ),
+                      const SizedBox(height: 12),
+                      InkWell(
+                        onTap: pickImage,
+                        borderRadius: BorderRadius.circular(18),
+                        child: AspectRatio(
+                          aspectRatio: 1.35,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: AppPalette.feedBg,
                               borderRadius: BorderRadius.circular(18),
-                              borderSide: const BorderSide(
+                              border: Border.all(
                                 color: AppPalette.border,
                               ),
                             ),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            onPressed:
-                                canPublish ? () => unawaited(publish()) : null,
-                            icon: uploading
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
+                            clipBehavior: Clip.antiAlias,
+                            child: pickedImage == null
+                                ? const Center(
+                                    child: Icon(
+                                      Icons.add_photo_alternate_outlined,
+                                      color: AppPalette.blue,
+                                      size: 42,
                                     ),
                                   )
-                                : const Icon(Icons.publish_rounded),
-                            label: Text(
-                                uploading ? 'Uploading...' : 'Upload post'),
+                                : Image.file(
+                                    File(pickedImage!.path),
+                                    fit: BoxFit.cover,
+                                  ),
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: controller,
+                        minLines: 2,
+                        maxLines: 4,
+                        maxLength: 180,
+                        onChanged: (_) => setSheetState(() {}),
+                        style: const TextStyle(color: AppPalette.textPrimary),
+                        decoration: InputDecoration(
+                          hintText: 'Write a caption...',
+                          hintStyle: const TextStyle(
+                            color: AppPalette.textMuted,
+                          ),
+                          filled: true,
+                          fillColor: AppPalette.feedBg,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(18),
+                            borderSide: const BorderSide(
+                              color: AppPalette.border,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed:
+                              canPublish ? () => unawaited(publish()) : null,
+                          icon: uploading
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.publish_rounded),
+                          label:
+                              Text(uploading ? 'Uploading...' : 'Upload post'),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -2277,43 +2194,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
       showDragHandle: true,
       backgroundColor: AppPalette.card,
       builder: (sheetContext) {
-        return Theme(
-          data: _lightSheetTheme(sheetContext),
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Discover people',
-                    style: TextStyle(
-                      color: AppPalette.textPrimary,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                    ),
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Discover people',
+                  style: TextStyle(
+                    color: AppPalette.textPrimary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
                   ),
-                  const SizedBox(height: 10),
-                  const Text(
-                    'Use the Search tab to find listeners, follow profiles, and start chats.',
-                    style: TextStyle(
-                      color: AppPalette.textSecondary,
-                      fontWeight: FontWeight.w700,
-                      height: 1.35,
-                    ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Use the Search tab to find listeners, follow profiles, and start chats.',
+                  style: TextStyle(
+                    color: AppPalette.textSecondary,
+                    fontWeight: FontWeight.w700,
+                    height: 1.35,
                   ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () => Navigator.of(sheetContext).pop(),
-                      icon: const Icon(Icons.search_rounded),
-                      label: const Text('Open Search tab from bottom menu'),
-                    ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => Navigator.of(sheetContext).pop(),
+                    icon: const Icon(Icons.search_rounded),
+                    label: const Text('Open Search tab from bottom menu'),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         );

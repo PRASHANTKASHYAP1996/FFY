@@ -232,47 +232,44 @@ class _AuthScreenState extends State<AuthScreen> {
       backgroundColor: AppPalette.card,
       barrierColor: Colors.black.withValues(alpha: 0.45),
       builder: (sheetContext) {
-        return Theme(
-          data: AppPalette.lightSheetTheme(sheetContext),
-          child: SafeArea(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                16,
-                8,
-                16,
-                MediaQuery.of(sheetContext).viewInsets.bottom + 20,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        color: AppPalette.textPrimary,
-                      ),
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              8,
+              16,
+              MediaQuery.of(sheetContext).viewInsets.bottom + 20,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      color: AppPalette.textPrimary,
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      body,
-                      style: const TextStyle(
-                        color: AppPalette.textSecondary,
-                        fontWeight: FontWeight.w600,
-                        height: 1.45,
-                      ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    body,
+                    style: const TextStyle(
+                      color: AppPalette.textSecondary,
+                      fontWeight: FontWeight.w600,
+                      height: 1.45,
                     ),
-                    const SizedBox(height: 18),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        onPressed: () => Navigator.of(sheetContext).pop(),
-                        child: const Text('Close'),
-                      ),
+                  ),
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () => Navigator.of(sheetContext).pop(),
+                      child: const Text('Close'),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -569,243 +566,237 @@ class _AuthScreenState extends State<AuthScreen> {
             surfaceTintColor: Colors.transparent,
             title: const Text('Friendify'),
           ),
-          body: Theme(
-            data: AppPalette.lightSheetTheme(context),
-            child: DecoratedBox(
-              decoration: const BoxDecoration(color: AppPalette.pageBg),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 460),
-                  child: ListView(
-                    keyboardDismissBehavior:
-                        ScrollViewKeyboardDismissBehavior.onDrag,
-                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
-                    children: [
-                      _heroCard(),
-                      const SizedBox(height: 14),
-                      Container(
-                        key: ValueKey('auth_form_card_$isLogin'),
-                        decoration: AppPalette.cardDecoration(radius: 18),
-                        child: Padding(
-                          padding: const EdgeInsets.all(18),
-                          child: FocusScope(
-                            key: ValueKey('auth_form_scope_$isLogin'),
-                            child: AutofillGroup(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _modeSwitch(),
-                                  const SizedBox(height: 18),
-                                  Text(
-                                    isLogin
-                                        ? 'Login to continue'
-                                        : 'Create your account',
-                                    style: const TextStyle(
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.w900,
-                                      color: AppPalette.textPrimary,
-                                    ),
+          body: DecoratedBox(
+            decoration: const BoxDecoration(color: AppPalette.pageBg),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 460),
+                child: ListView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
+                  children: [
+                    _heroCard(),
+                    const SizedBox(height: 14),
+                    Container(
+                      key: ValueKey('auth_form_card_$isLogin'),
+                      decoration: AppPalette.cardDecoration(radius: 18),
+                      child: Padding(
+                        padding: const EdgeInsets.all(18),
+                        child: FocusScope(
+                          key: ValueKey('auth_form_scope_$isLogin'),
+                          child: AutofillGroup(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _modeSwitch(),
+                                const SizedBox(height: 18),
+                                Text(
+                                  isLogin
+                                      ? 'Login to continue'
+                                      : 'Create your account',
+                                  style: const TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w900,
+                                    color: AppPalette.textPrimary,
                                   ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    isLogin
-                                        ? 'Access your chats, calls, wallet, history, and profile tools.'
-                                        : 'Set up your profile and start using Friendify in minutes.',
-                                    style: const TextStyle(
-                                      color: AppPalette.textSecondary,
-                                      fontWeight: FontWeight.w600,
-                                      height: 1.35,
-                                    ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  isLogin
+                                      ? 'Access your chats, calls, wallet, history, and profile tools.'
+                                      : 'Set up your profile and start using Friendify in minutes.',
+                                  style: const TextStyle(
+                                    color: AppPalette.textSecondary,
+                                    fontWeight: FontWeight.w600,
+                                    height: 1.35,
                                   ),
-                                  const SizedBox(height: 16),
-                                  if (!isLogin) ...[
-                                    TextField(
-                                      key: const ValueKey('auth_name_field'),
-                                      controller: _name,
-                                      focusNode: _signUpNameFocusNode,
-                                      autofocus: false,
-                                      cursorColor: AppPalette.blue,
-                                      style: const TextStyle(
-                                        color: AppPalette.textPrimary,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                      textInputAction: TextInputAction.next,
-                                      onSubmitted: (_) =>
-                                          _signUpEmailFocusNode.requestFocus(),
-                                      autofillHints: const [AutofillHints.name],
-                                      onTapOutside: (_) => _dismissAnyFocus(),
-                                      decoration: const InputDecoration(
-                                        labelText: 'Name',
-                                        hintText: 'Enter your full name',
-                                        prefixIcon:
-                                            Icon(Icons.person_outline_rounded),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 12),
-                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                if (!isLogin) ...[
                                   TextField(
-                                    key: ValueKey('auth_email_field_$isLogin'),
-                                    controller: _email,
-                                    focusNode: _activeEmailFocusNode,
+                                    key: const ValueKey('auth_name_field'),
+                                    controller: _name,
+                                    focusNode: _signUpNameFocusNode,
                                     autofocus: false,
                                     cursorColor: AppPalette.blue,
                                     style: const TextStyle(
                                       color: AppPalette.textPrimary,
                                       fontWeight: FontWeight.w800,
                                     ),
-                                    keyboardType: TextInputType.emailAddress,
                                     textInputAction: TextInputAction.next,
-                                    autofillHints: const [AutofillHints.email],
                                     onSubmitted: (_) =>
-                                        _activePasswordFocusNode.requestFocus(),
+                                        _signUpEmailFocusNode.requestFocus(),
+                                    autofillHints: const [AutofillHints.name],
                                     onTapOutside: (_) => _dismissAnyFocus(),
                                     decoration: const InputDecoration(
-                                      labelText: 'Email',
-                                      hintText: 'Enter your email address',
+                                      labelText: 'Name',
+                                      hintText: 'Enter your full name',
                                       prefixIcon:
-                                          Icon(Icons.mail_outline_rounded),
+                                          Icon(Icons.person_outline_rounded),
                                     ),
                                   ),
                                   const SizedBox(height: 12),
-                                  TextField(
-                                    key: ValueKey(
-                                        'auth_password_field_$isLogin'),
-                                    controller: _pass,
-                                    focusNode: _activePasswordFocusNode,
-                                    autofocus: false,
-                                    cursorColor: AppPalette.blue,
-                                    style: const TextStyle(
-                                      color: AppPalette.textPrimary,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                    obscureText: _obscurePassword,
-                                    autofillHints: isLogin
-                                        ? const [AutofillHints.password]
-                                        : const [AutofillHints.newPassword],
-                                    onSubmitted: (_) => submit(),
-                                    onTapOutside: (_) => _dismissAnyFocus(),
-                                    decoration: InputDecoration(
-                                      labelText: 'Password',
-                                      hintText: 'Minimum 6 characters',
-                                      prefixIcon: const Icon(
-                                          Icons.lock_outline_rounded),
-                                      suffixIcon: IconButton(
-                                        onPressed: loading
-                                            ? null
-                                            : () {
-                                                setState(() {
-                                                  _obscurePassword =
-                                                      !_obscurePassword;
-                                                });
-                                              },
-                                        icon: Icon(
-                                          _obscurePassword
-                                              ? Icons.visibility_off_rounded
-                                              : Icons.visibility_rounded,
-                                        ),
+                                ],
+                                TextField(
+                                  key: ValueKey('auth_email_field_$isLogin'),
+                                  controller: _email,
+                                  focusNode: _activeEmailFocusNode,
+                                  autofocus: false,
+                                  cursorColor: AppPalette.blue,
+                                  style: const TextStyle(
+                                    color: AppPalette.textPrimary,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                  keyboardType: TextInputType.emailAddress,
+                                  textInputAction: TextInputAction.next,
+                                  autofillHints: const [AutofillHints.email],
+                                  onSubmitted: (_) =>
+                                      _activePasswordFocusNode.requestFocus(),
+                                  onTapOutside: (_) => _dismissAnyFocus(),
+                                  decoration: const InputDecoration(
+                                    labelText: 'Email',
+                                    hintText: 'Enter your email address',
+                                    prefixIcon:
+                                        Icon(Icons.mail_outline_rounded),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                TextField(
+                                  key: ValueKey('auth_password_field_$isLogin'),
+                                  controller: _pass,
+                                  focusNode: _activePasswordFocusNode,
+                                  autofocus: false,
+                                  cursorColor: AppPalette.blue,
+                                  style: const TextStyle(
+                                    color: AppPalette.textPrimary,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                  obscureText: _obscurePassword,
+                                  autofillHints: isLogin
+                                      ? const [AutofillHints.password]
+                                      : const [AutofillHints.newPassword],
+                                  onSubmitted: (_) => submit(),
+                                  onTapOutside: (_) => _dismissAnyFocus(),
+                                  decoration: InputDecoration(
+                                    labelText: 'Password',
+                                    hintText: 'Minimum 6 characters',
+                                    prefixIcon:
+                                        const Icon(Icons.lock_outline_rounded),
+                                    suffixIcon: IconButton(
+                                      onPressed: loading
+                                          ? null
+                                          : () {
+                                              setState(() {
+                                                _obscurePassword =
+                                                    !_obscurePassword;
+                                              });
+                                            },
+                                      icon: Icon(
+                                        _obscurePassword
+                                            ? Icons.visibility_off_rounded
+                                            : Icons.visibility_rounded,
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(height: 12),
-                                  if (error != null)
-                                    Container(
-                                      width: double.infinity,
-                                      padding: const EdgeInsets.all(12),
-                                      decoration: BoxDecoration(
+                                ),
+                                const SizedBox(height: 12),
+                                if (error != null)
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFDC2626).withValues(
+                                        alpha: 0.10,
+                                      ),
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(
                                         color:
                                             const Color(0xFFDC2626).withValues(
-                                          alpha: 0.10,
-                                        ),
-                                        borderRadius: BorderRadius.circular(16),
-                                        border: Border.all(
-                                          color: const Color(0xFFDC2626)
-                                              .withValues(
-                                            alpha: 0.26,
-                                          ),
-                                        ),
-                                      ),
-                                      child: Text(
-                                        error!,
-                                        style: const TextStyle(
-                                          color: Color(0xFFDC2626),
-                                          fontWeight: FontWeight.w700,
+                                          alpha: 0.26,
                                         ),
                                       ),
                                     ),
-                                  if (error != null) const SizedBox(height: 12),
-                                  SizedBox(
-                                    width: double.infinity,
-                                    child: FilledButton.icon(
-                                      onPressed: loading ? null : submit,
-                                      icon: Icon(
-                                        loading
-                                            ? Icons.hourglass_top_rounded
-                                            : (isLogin
-                                                ? Icons.login_rounded
-                                                : Icons
-                                                    .person_add_alt_1_rounded),
-                                      ),
-                                      label: Text(
-                                        loading
-                                            ? 'Please wait...'
-                                            : (isLogin
-                                                ? 'Login'
-                                                : 'Create Account'),
+                                    child: Text(
+                                      error!,
+                                      style: const TextStyle(
+                                        color: Color(0xFFDC2626),
+                                        fontWeight: FontWeight.w700,
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(height: 14),
-                                  _infoLine(
-                                    Icons.shield_outlined,
-                                    'Safe profile creation and protected login flow.',
+                                if (error != null) const SizedBox(height: 12),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: FilledButton.icon(
+                                    onPressed: loading ? null : submit,
+                                    icon: Icon(
+                                      loading
+                                          ? Icons.hourglass_top_rounded
+                                          : (isLogin
+                                              ? Icons.login_rounded
+                                              : Icons.person_add_alt_1_rounded),
+                                    ),
+                                    label: Text(
+                                      loading
+                                          ? 'Please wait...'
+                                          : (isLogin
+                                              ? 'Login'
+                                              : 'Create Account'),
+                                    ),
                                   ),
-                                  const SizedBox(height: 8),
-                                  _infoLine(
-                                    Icons.call_rounded,
-                                    'Start chatting, calling, or receiving requests after login.',
-                                  ),
-                                ],
-                              ),
+                                ),
+                                const SizedBox(height: 14),
+                                _infoLine(
+                                  Icons.shield_outlined,
+                                  'Safe profile creation and protected login flow.',
+                                ),
+                                const SizedBox(height: 8),
+                                _infoLine(
+                                  Icons.call_rounded,
+                                  'Start chatting, calling, or receiving requests after login.',
+                                ),
+                              ],
                             ),
                           ),
                         ),
                       ),
-                      if (kDebugMode) ...[
-                        const SizedBox(height: 12),
-                        _launchInfoCard(),
-                      ],
+                    ),
+                    if (kDebugMode) ...[
                       const SizedBox(height: 12),
-                      Container(
-                        decoration: AppPalette.cardDecoration(radius: 18),
-                        child: ListTile(
-                          leading: const Icon(
-                            Icons.support_rounded,
-                            color: Color(0xFFF59E0B),
+                      _launchInfoCard(),
+                    ],
+                    const SizedBox(height: 12),
+                    Container(
+                      decoration: AppPalette.cardDecoration(radius: 18),
+                      child: ListTile(
+                        leading: const Icon(
+                          Icons.support_rounded,
+                          color: Color(0xFFF59E0B),
+                        ),
+                        title: const Text(
+                          'Crisis Help',
+                          style: TextStyle(
+                            color: AppPalette.textPrimary,
+                            fontWeight: FontWeight.w900,
                           ),
-                          title: const Text(
-                            'Crisis Help',
-                            style: TextStyle(
-                              color: AppPalette.textPrimary,
-                              fontWeight: FontWeight.w900,
-                            ),
+                        ),
+                        subtitle: const Text(
+                          'If you feel unsafe or overwhelmed, get immediate help now.',
+                          style: TextStyle(
+                            color: AppPalette.textSecondary,
+                            fontWeight: FontWeight.w600,
                           ),
-                          subtitle: const Text(
-                            'If you feel unsafe or overwhelmed, get immediate help now.',
-                            style: TextStyle(
-                              color: AppPalette.textSecondary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const CrisisHelpScreen(),
-                            ),
+                        ),
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const CrisisHelpScreen(),
                           ),
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),

@@ -91,8 +91,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   void _toggleCsv(TextEditingController c, String value) {
     if (_saving) return;
     final items = _splitCsv(c.text);
-    final idx =
-        items.indexWhere((i) => i.toLowerCase() == value.toLowerCase());
+    final idx = items.indexWhere((i) => i.toLowerCase() == value.toLowerCase());
     if (idx >= 0) {
       items.removeAt(idx);
     } else {
@@ -118,8 +117,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             borderRadius: BorderRadius.circular(999),
             onTap: () => _toggleCsv(c, option),
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
               decoration: BoxDecoration(
                 color: selected ? AppPalette.blue : AppPalette.blueTint,
                 borderRadius: BorderRadius.circular(999),
@@ -128,9 +126,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    selected
-                        ? Icons.check_rounded
-                        : Icons.add_rounded,
+                    selected ? Icons.check_rounded : Icons.add_rounded,
                     size: 14,
                     color: selected ? Colors.white : AppPalette.blue,
                   ),
@@ -261,47 +257,44 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       backgroundColor: AppPalette.card,
       barrierColor: Colors.black.withValues(alpha: 0.45),
       builder: (sheetContext) {
-        return Theme(
-          data: AppPalette.lightSheetTheme(sheetContext),
-          child: SafeArea(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                16,
-                8,
-                16,
-                MediaQuery.of(sheetContext).viewInsets.bottom + 20,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        color: AppPalette.textPrimary,
-                      ),
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              8,
+              16,
+              MediaQuery.of(sheetContext).viewInsets.bottom + 20,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      color: AppPalette.textPrimary,
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      body,
-                      style: const TextStyle(
-                        color: AppPalette.textSecondary,
-                        fontWeight: FontWeight.w600,
-                        height: 1.45,
-                      ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    body,
+                    style: const TextStyle(
+                      color: AppPalette.textSecondary,
+                      fontWeight: FontWeight.w600,
+                      height: 1.45,
                     ),
-                    const SizedBox(height: 18),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        onPressed: () => Navigator.of(sheetContext).pop(),
-                        child: const Text('Close'),
-                      ),
+                  ),
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () => Navigator.of(sheetContext).pop(),
+                      child: const Text('Close'),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -792,199 +785,193 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             ),
           ],
         ),
-        body: Theme(
-          data: AppPalette.lightSheetTheme(context),
-          child: DecoratedBox(
-            decoration: const BoxDecoration(color: AppPalette.pageBg),
-            child: Column(
-              children: [
-                const SizedBox(height: 8),
-                Text(
-                  _stepLabel(),
-                  style: const TextStyle(
-                    color: AppPalette.textSecondary,
-                    fontWeight: FontWeight.w700,
-                  ),
+        body: DecoratedBox(
+          decoration: const BoxDecoration(color: AppPalette.pageBg),
+          child: Column(
+            children: [
+              const SizedBox(height: 8),
+              Text(
+                _stepLabel(),
+                style: const TextStyle(
+                  color: AppPalette.textSecondary,
+                  fontWeight: FontWeight.w700,
                 ),
-                const SizedBox(height: 10),
-                Expanded(
-                  child: PageView(
-                    controller: _controller,
-                    onPageChanged: (i) => setState(() => _page = i),
-                    children: [
-                      _pageViewport(
-                        card: _pageCard(
-                          icon: Icons.people_alt_rounded,
-                          gradient: const [
-                            Color(0xFF2F6FED),
-                            Color(0xFF5B8DEF),
-                          ],
-                          eyebrow: 'REAL CONNECTIONS',
-                          title:
-                              'Talk, listen, and find the right kind of support',
-                          body:
-                              'Friendify helps people connect for meaningful conversations. '
-                              'You can come here to talk, listen, or do both when that option is available for your account.',
-                          chips: [
-                            _benefitChip(
-                              icon: Icons.chat_bubble_outline_rounded,
-                              text: 'Talk when you need support',
-                              bg: AppPalette.blueTint,
-                              fg: AppPalette.blue,
-                            ),
-                            _benefitChip(
-                              icon: Icons.hearing_rounded,
-                              text: 'Listen for others',
-                            ),
-                            _benefitChip(
-                              icon: Icons.translate_rounded,
-                              text: 'Topics & languages',
-                              bg: AppPalette.online.withValues(alpha: 0.14),
-                              fg: AppPalette.online,
-                            ),
-                          ],
-                        ),
-                        notice: _profileSetupCard(),
+              ),
+              const SizedBox(height: 10),
+              Expanded(
+                child: PageView(
+                  controller: _controller,
+                  onPageChanged: (i) => setState(() => _page = i),
+                  children: [
+                    _pageViewport(
+                      card: _pageCard(
+                        icon: Icons.people_alt_rounded,
+                        gradient: const [
+                          Color(0xFF2F6FED),
+                          Color(0xFF5B8DEF),
+                        ],
+                        eyebrow: 'REAL CONNECTIONS',
+                        title:
+                            'Talk, listen, and find the right kind of support',
+                        body:
+                            'Friendify helps people connect for meaningful conversations. '
+                            'You can come here to talk, listen, or do both when that option is available for your account.',
+                        chips: [
+                          _benefitChip(
+                            icon: Icons.chat_bubble_outline_rounded,
+                            text: 'Talk when you need support',
+                            bg: AppPalette.blueTint,
+                            fg: AppPalette.blue,
+                          ),
+                          _benefitChip(
+                            icon: Icons.hearing_rounded,
+                            text: 'Listen for others',
+                          ),
+                          _benefitChip(
+                            icon: Icons.translate_rounded,
+                            text: 'Topics & languages',
+                            bg: AppPalette.online.withValues(alpha: 0.14),
+                            fg: AppPalette.online,
+                          ),
+                        ],
                       ),
-                      _pageViewport(
-                        card: _pageCard(
-                          icon: Icons.call_rounded,
-                          gradient: const [
-                            Color(0xFF22C08A),
-                            Color(0xFF2FB0C0),
-                          ],
-                          eyebrow: 'SIMPLE CALLING',
-                          title:
-                              'Start with chat, then move to calls when you are ready',
-                          body:
-                              'You can chat first, request a call, and keep track of credits in your wallet.\n\n'
-                              'Rates are shown before a paid call starts, and short calls may not use credits depending on the flow.',
-                          chips: [
-                            _benefitChip(
-                              icon: Icons.flash_on_rounded,
-                              text: 'Chat first',
-                              bg: AppPalette.online.withValues(alpha: 0.14),
-                              fg: AppPalette.online,
-                            ),
-                            _benefitChip(
-                              icon: Icons.account_balance_wallet_rounded,
-                              text: 'Wallet tracking',
-                            ),
-                            _benefitChip(
-                              icon: Icons.timer_outlined,
-                              text: 'See rates upfront',
-                              bg: const Color(0xFFF59E0B)
-                                  .withValues(alpha: 0.14),
-                              fg: const Color(0xFFB45309),
-                            ),
-                          ],
-                        ),
-                        notice: _noticeCard(
-                          title: 'Wallet and credits',
-                          body:
-                              'Your wallet helps you track credits for calling and '
-                              'any listener earnings available to your account. '
-                              'Available wallet options depend on your account and '
-                              'support setup.',
-                          actions: [
-                            OutlinedButton(
-                              onPressed: () {
-                                _showInfoSheet(
-                                  title: 'How wallet features work',
-                                  body:
-                                      'Before a paid call starts, you should be able to see the rate. Your wallet shows available balance and recent activity.\n\nSome payment or withdrawal features may be limited depending on your account or availability.',
-                                );
-                              },
-                              child: const Text('Wallet details'),
-                            ),
-                          ],
-                        ),
+                      notice: _profileSetupCard(),
+                    ),
+                    _pageViewport(
+                      card: _pageCard(
+                        icon: Icons.call_rounded,
+                        gradient: const [
+                          Color(0xFF22C08A),
+                          Color(0xFF2FB0C0),
+                        ],
+                        eyebrow: 'SIMPLE CALLING',
+                        title:
+                            'Start with chat, then move to calls when you are ready',
+                        body:
+                            'You can chat first, request a call, and keep track of credits in your wallet.\n\n'
+                            'Rates are shown before a paid call starts, and short calls may not use credits depending on the flow.',
+                        chips: [
+                          _benefitChip(
+                            icon: Icons.flash_on_rounded,
+                            text: 'Chat first',
+                            bg: AppPalette.online.withValues(alpha: 0.14),
+                            fg: AppPalette.online,
+                          ),
+                          _benefitChip(
+                            icon: Icons.account_balance_wallet_rounded,
+                            text: 'Wallet tracking',
+                          ),
+                          _benefitChip(
+                            icon: Icons.timer_outlined,
+                            text: 'See rates upfront',
+                            bg: const Color(0xFFF59E0B).withValues(alpha: 0.14),
+                            fg: const Color(0xFFB45309),
+                          ),
+                        ],
                       ),
-                      _pageViewport(
-                        card: _pageCard(
-                          icon: Icons.health_and_safety_rounded,
-                          gradient: const [
-                            Color(0xFFF59E0B),
-                            Color(0xFFEF6B6B),
-                          ],
-                          eyebrow: 'SAFETY FIRST',
-                          title: 'Built with safety tools from the start',
-                          body: 'You can report and block users anytime.\n'
-                              'If you feel unsafe or overwhelmed, use Crisis Help immediately.\n\n'
-                              'Policies, support, and account tools are available from Profile and Help.',
-                          chips: [
-                            _benefitChip(
-                              icon: Icons.flag_rounded,
-                              text: 'Report users',
-                              bg: const Color(0xFFDC2626)
-                                  .withValues(alpha: 0.12),
-                              fg: const Color(0xFFDC2626),
-                            ),
-                            _benefitChip(
-                              icon: Icons.block_rounded,
-                              text: 'Block anytime',
-                            ),
-                            _benefitChip(
-                              icon: Icons.support_rounded,
-                              text: 'Crisis help',
-                              bg: const Color(0xFFF59E0B)
-                                  .withValues(alpha: 0.14),
-                              fg: const Color(0xFFB45309),
-                            ),
-                          ],
-                        ),
-                        notice: _noticeCard(
-                          title: 'Need help?',
-                          body:
-                              'You can review policies, contact support, and submit a delete-account request from Profile and Help whenever you need them.',
-                          actions: [
-                            OutlinedButton(
-                              onPressed: () {
-                                _showInfoSheet(
-                                  title: 'Where to find help',
-                                  body:
-                                      'Look in Profile and Help for Privacy Policy, Terms of Service, Refund / Cancellation Policy, Support, Crisis Help, and Delete Account Request.',
-                                );
-                              },
-                              child: const Text('Where to look'),
-                            ),
-                          ],
-                        ),
+                      notice: _noticeCard(
+                        title: 'Wallet and credits',
+                        body:
+                            'Your wallet helps you track credits for calling and '
+                            'any listener earnings available to your account. '
+                            'Available wallet options depend on your account and '
+                            'support setup.',
+                        actions: [
+                          OutlinedButton(
+                            onPressed: () {
+                              _showInfoSheet(
+                                title: 'How wallet features work',
+                                body:
+                                    'Before a paid call starts, you should be able to see the rate. Your wallet shows available balance and recent activity.\n\nSome payment or withdrawal features may be limited depending on your account or availability.',
+                              );
+                            },
+                            child: const Text('Wallet details'),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                    _pageViewport(
+                      card: _pageCard(
+                        icon: Icons.health_and_safety_rounded,
+                        gradient: const [
+                          Color(0xFFF59E0B),
+                          Color(0xFFEF6B6B),
+                        ],
+                        eyebrow: 'SAFETY FIRST',
+                        title: 'Built with safety tools from the start',
+                        body: 'You can report and block users anytime.\n'
+                            'If you feel unsafe or overwhelmed, use Crisis Help immediately.\n\n'
+                            'Policies, support, and account tools are available from Profile and Help.',
+                        chips: [
+                          _benefitChip(
+                            icon: Icons.flag_rounded,
+                            text: 'Report users',
+                            bg: const Color(0xFFDC2626).withValues(alpha: 0.12),
+                            fg: const Color(0xFFDC2626),
+                          ),
+                          _benefitChip(
+                            icon: Icons.block_rounded,
+                            text: 'Block anytime',
+                          ),
+                          _benefitChip(
+                            icon: Icons.support_rounded,
+                            text: 'Crisis help',
+                            bg: const Color(0xFFF59E0B).withValues(alpha: 0.14),
+                            fg: const Color(0xFFB45309),
+                          ),
+                        ],
+                      ),
+                      notice: _noticeCard(
+                        title: 'Need help?',
+                        body:
+                            'You can review policies, contact support, and submit a delete-account request from Profile and Help whenever you need them.',
+                        actions: [
+                          OutlinedButton(
+                            onPressed: () {
+                              _showInfoSheet(
+                                title: 'Where to find help',
+                                body:
+                                    'Look in Profile and Help for Privacy Policy, Terms of Service, Refund / Cancellation Policy, Support, Crisis Help, and Delete Account Request.',
+                              );
+                            },
+                            child: const Text('Where to look'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 18),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final compact = constraints.maxWidth < 360;
-                      if (compact) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Center(child: _pageDots()),
-                            const SizedBox(height: 12),
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: _pageActions(isLast),
-                            ),
-                          ],
-                        );
-                      }
-
-                      return Row(
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 18),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final compact = constraints.maxWidth < 360;
+                    if (compact) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _pageDots(),
-                          const Spacer(),
-                          _pageActions(isLast),
+                          Center(child: _pageDots()),
+                          const SizedBox(height: 12),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: _pageActions(isLast),
+                          ),
                         ],
                       );
-                    },
-                  ),
+                    }
+
+                    return Row(
+                      children: [
+                        _pageDots(),
+                        const Spacer(),
+                        _pageActions(isLast),
+                      ],
+                    );
+                  },
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

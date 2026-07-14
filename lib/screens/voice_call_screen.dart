@@ -277,91 +277,88 @@ class _VoiceCallScreenState extends State<VoiceCallScreen>
       showDragHandle: true,
       backgroundColor: AppPalette.card,
       builder: (sheetContext) {
-        return Theme(
-          data: AppPalette.lightSheetTheme(sheetContext),
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF111827),
-                    ),
-                    textAlign: TextAlign.center,
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF111827),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      color: Color(0xFF6B7280),
-                      fontWeight: FontWeight.w600,
-                    ),
-                    textAlign: TextAlign.center,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: Color(0xFF6B7280),
+                    fontWeight: FontWeight.w600,
                   ),
-                  const SizedBox(height: 14),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(
-                        children: [
-                          _summaryRow('Person', otherName),
-                          const SizedBox(height: 8),
-                          _summaryRow('Duration', _durationLabel(seconds)),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 14),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      children: [
+                        _summaryRow('Person', otherName),
+                        const SizedBox(height: 8),
+                        _summaryRow('Duration', _durationLabel(seconds)),
+                        const SizedBox(height: 8),
+                        _summaryRow(
+                          'Billable minutes',
+                          wasAnswered ? '$fullMinutes' : '0',
+                        ),
+                        const SizedBox(height: 8),
+                        _summaryRow('Pricing', rateLabel),
+                        const SizedBox(height: 8),
+                        _summaryRow('Result', amountLabel),
+                        if (!wasAnswered) ...[
                           const SizedBox(height: 8),
                           _summaryRow(
-                            'Billable minutes',
-                            wasAnswered ? '$fullMinutes' : '0',
-                          ),
-                          const SizedBox(height: 8),
-                          _summaryRow('Pricing', rateLabel),
-                          const SizedBox(height: 8),
-                          _summaryRow('Result', amountLabel),
-                          if (!wasAnswered) ...[
-                            const SizedBox(height: 8),
-                            _summaryRow(
-                              'Reason',
-                              _humanizeReason(
-                                rejectedReason.isNotEmpty
-                                    ? rejectedReason
-                                    : endedReason,
-                              ),
+                            'Reason',
+                            _humanizeReason(
+                              rejectedReason.isNotEmpty
+                                  ? rejectedReason
+                                  : endedReason,
                             ),
-                          ],
+                          ),
                         ],
-                      ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  if (wasAnswered)
-                    const Text(
-                      'Next step: leave a rating and optional review.',
-                      style: TextStyle(
-                        color: Color(0xFF4F46E5),
-                        fontWeight: FontWeight.w700,
-                      ),
-                      textAlign: TextAlign.center,
-                    )
-                  else
-                    const Text(
-                      'No billing applies because the call was not completed.',
-                      style: TextStyle(
-                        color: Color(0xFF6B7280),
-                        fontWeight: FontWeight.w700,
-                      ),
-                      textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 10),
+                if (wasAnswered)
+                  const Text(
+                    'Next step: leave a rating and optional review.',
+                    style: TextStyle(
+                      color: Color(0xFF4F46E5),
+                      fontWeight: FontWeight.w700,
                     ),
-                  const SizedBox(height: 14),
-                  FilledButton(
-                    onPressed: () => Navigator.pop(sheetContext),
-                    child: Text(wasAnswered ? 'Continue to Rating' : 'Done'),
+                    textAlign: TextAlign.center,
+                  )
+                else
+                  const Text(
+                    'No billing applies because the call was not completed.',
+                    style: TextStyle(
+                      color: Color(0xFF6B7280),
+                      fontWeight: FontWeight.w700,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                ],
-              ),
+                const SizedBox(height: 14),
+                FilledButton(
+                  onPressed: () => Navigator.pop(sheetContext),
+                  child: Text(wasAnswered ? 'Continue to Rating' : 'Done'),
+                ),
+              ],
             ),
           ),
         );
@@ -742,37 +739,34 @@ class _VoiceCallScreenState extends State<VoiceCallScreen>
       context: context,
       showDragHandle: true,
       backgroundColor: AppPalette.card,
-      builder: (sheetContext) => Theme(
-        data: AppPalette.lightSheetTheme(sheetContext),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Report / Block',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    color: Color(0xFF111827),
-                  ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Report / Block',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF111827),
                 ),
-                const SizedBox(height: 12),
-                ...reasons.map(
-                  (r) => ListTile(
-                    leading: const Icon(Icons.flag_outlined),
-                    title: Text(r),
-                    onTap: () => Navigator.pop(sheetContext, r),
-                  ),
+              ),
+              const SizedBox(height: 12),
+              ...reasons.map(
+                (r) => ListTile(
+                  leading: const Icon(Icons.flag_outlined),
+                  title: Text(r),
+                  onTap: () => Navigator.pop(sheetContext, r),
                 ),
-                const SizedBox(height: 8),
-                TextButton(
-                  onPressed: () => Navigator.pop(sheetContext),
-                  child: const Text('Cancel'),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => Navigator.pop(sheetContext),
+                child: const Text('Cancel'),
+              ),
+            ],
           ),
         ),
       ),

@@ -177,47 +177,44 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
       showDragHandle: true,
       isScrollControlled: true,
       builder: (sheetContext) {
-        return Theme(
-          data: AppPalette.lightSheetTheme(sheetContext),
-          child: SafeArea(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                16,
-                8,
-                16,
-                MediaQuery.of(sheetContext).viewInsets.bottom + 20,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        color: Color(0xFF111827),
-                      ),
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              8,
+              16,
+              MediaQuery.of(sheetContext).viewInsets.bottom + 20,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF111827),
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      body,
-                      style: const TextStyle(
-                        color: Color(0xFF374151),
-                        fontWeight: FontWeight.w600,
-                        height: 1.45,
-                      ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    body,
+                    style: const TextStyle(
+                      color: Color(0xFF374151),
+                      fontWeight: FontWeight.w600,
+                      height: 1.45,
                     ),
-                    const SizedBox(height: 18),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        onPressed: () => Navigator.of(sheetContext).pop(),
-                        child: const Text('Close'),
-                      ),
+                  ),
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () => Navigator.of(sheetContext).pop(),
+                      child: const Text('Close'),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -596,11 +593,8 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
         showDragHandle: true,
         isScrollControlled: true,
         builder: (sheetContext) {
-          return Theme(
-            data: AppPalette.lightSheetTheme(sheetContext),
-            child: _WithdrawalRequestSheet(
-              me: me,
-            ),
+          return _WithdrawalRequestSheet(
+            me: me,
           );
         },
       );
