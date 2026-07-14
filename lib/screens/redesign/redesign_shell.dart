@@ -6,6 +6,7 @@ import '../../core/theme/app_palette.dart';
 import '../../repositories/call_repository.dart';
 import '../../repositories/social_repository.dart';
 import '../../repositories/user_repository.dart';
+import '../../shared/discover_ranking.dart';
 import '../../shared/models/app_user_model.dart';
 import '../../shared/models/social_post_model.dart';
 import '../call_history_screen.dart';
@@ -221,51 +222,6 @@ class _DiscoverPage extends StatefulWidget {
 }
 
 class _DiscoverPageState extends State<_DiscoverPage> {
-  static const List<String> _moods = <String>[
-    'Lonely',
-    'Stressed',
-    'Breakup',
-    'Just talk',
-  ];
-
-  /// Keywords matched (case-insensitive) against a listener's topics + bio.
-  /// An empty list means "matches everyone" (used by 'Just talk').
-  static const Map<String, List<String>> _moodKeywords = <String, List<String>>{
-    'Lonely': <String>[
-      'lonely',
-      'loneliness',
-      'alone',
-      'friend',
-      'company',
-      'companion',
-      'listen',
-    ],
-    'Stressed': <String>[
-      'stress',
-      'anxiety',
-      'anxious',
-      'pressure',
-      'work',
-      'career',
-      'study',
-      'exam',
-      'calm',
-      'overthink',
-    ],
-    'Breakup': <String>[
-      'breakup',
-      'break-up',
-      'break up',
-      'relationship',
-      'heartbreak',
-      'love',
-      'dating',
-      'divorce',
-      'marriage',
-    ],
-    'Just talk': <String>[],
-  };
-
   String _mood = '';
 
   final Stream<List<AppUserModel>> _stream =
@@ -300,32 +256,6 @@ class _DiscoverPageState extends State<_DiscoverPage> {
     });
   }
 
-  /// Narrow the available list by the search text and language chip. Mood and
-  /// price sort are applied afterwards on the result.
-  List<AppUserModel> _applyFilters(List<AppUserModel> all) {
-    final query = _query.trim().toLowerCase();
-    final lang = _languageFilter.toLowerCase();
-    if (query.isEmpty && lang.isEmpty) return all;
-    return all.where((u) {
-      if (query.isNotEmpty) {
-        final hay = <String>[
-          u.safeDisplayName,
-          u.bio,
-          u.city,
-          u.state,
-          ...u.topics,
-          ...u.languages,
-        ].join(' ').toLowerCase();
-        if (!hay.contains(query)) return false;
-      }
-      if (lang.isNotEmpty &&
-          !u.languages.any((l) => l.toLowerCase() == lang)) {
-        return false;
-      }
-      return true;
-    }).toList(growable: false);
-  }
-
   @override
   void dispose() {
     _searchController.dispose();
@@ -354,36 +284,6 @@ class _DiscoverPageState extends State<_DiscoverPage> {
     } finally {
       if (mounted) setState(() => _favBusy.remove(id));
     }
-  }
-
-  /// True when a mood is picked that actually filters ('Just talk' has no
-  /// keywords, so it never narrows the list).
-  bool get _moodActive =>
-      _mood.isNotEmpty && (_moodKeywords[_mood]?.isNotEmpty ?? false);
-
-  bool _matchesMood(AppUserModel u) {
-    final keywords = _moodKeywords[_mood] ?? const <String>[];
-    if (keywords.isEmpty) return true;
-    final haystack = '${u.topics.join(' ')} ${u.bio}'.toLowerCase();
-    return keywords.any(haystack.contains);
-  }
-
-  /// Moods re-order (best matches first) but never hide anyone, so the front
-  /// door always shows real people. Returns the ordered list + how many
-  /// actually matched the mood.
-  ({List<AppUserModel> ordered, int matchCount}) _orderByMood(
-    List<AppUserModel> all,
-  ) {
-    if (!_moodActive) return (ordered: all, matchCount: 0);
-    final matched = all.where(_matchesMood).toList(growable: false);
-    final matchedUids = matched.map((u) => u.uid).toSet();
-    return (
-      ordered: <AppUserModel>[
-        ...matched,
-        ...all.where((u) => !matchedUids.contains(u.uid)),
-      ],
-      matchCount: matched.length,
-    );
   }
 
   void _openProfile(AppUserModel user) {
@@ -583,21 +483,24 @@ class _DiscoverPageState extends State<_DiscoverPage> {
                     'Check back in a little while.',
                   );
                 }
-                final filtered = _applyFilters(all);
+                final filtered = DiscoverRanking.applyFilters(
+                  all,
+                  query: _query,
+                  language: _languageFilter,
+                );
                 // Mood re-orders the filtered set (best matches first) but
                 // never hides anyone within it.
-                final result = _orderByMood(filtered);
+                final result = DiscoverRanking.orderByMood(filtered, _mood);
                 var listeners = result.ordered;
                 if (_sortLowToHigh) {
-                  listeners = [...listeners]
-                    ..sort((a, b) => a.listenerRate.compareTo(b.listenerRate));
+                  listeners = DiscoverRanking.sortByPriceAscending(listeners);
                 }
                 final String statusText;
                 if (_filtersActive) {
                   final n = filtered.length;
                   statusText =
                       n == 0 ? 'No matches' : '$n ${n == 1 ? 'match' : 'matches'}';
-                } else if (!_moodActive) {
+                } else if (!DiscoverRanking.moodActive(_mood)) {
                   statusText = '${all.length} here for you now';
                 } else if (result.matchCount == 0) {
                   statusText = "No one's tagged for \"$_mood\" yet — "
@@ -759,8 +662,8 @@ class _DiscoverPageState extends State<_DiscoverPage> {
           const SizedBox(height: 12),
           Wrap(
             spacing: 7,
-            children: List.generate(_moods.length, (i) {
-              final mood = _moods[i];
+            children: List.generate(DiscoverRanking.moods.length, (i) {
+              final mood = DiscoverRanking.moods[i];
               final selected = _mood == mood;
               return InkWell(
                 borderRadius: BorderRadius.circular(999),
