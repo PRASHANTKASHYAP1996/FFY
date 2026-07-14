@@ -267,6 +267,31 @@ class _DiscoverPageState extends State<_DiscoverPage> {
 
   final Stream<List<AppUserModel>> _stream =
       UserRepository.instance.watchAvailableListeners();
+  final Stream<AppUserModel?> _me = UserRepository.instance.watchMe();
+
+  // uids with an in-flight favorite toggle, to swallow rapid double-taps.
+  final Set<String> _favBusy = <String>{};
+
+  Future<void> _toggleFavorite(String uid, bool isFavoriteNow) async {
+    final id = uid.trim();
+    if (id.isEmpty || _favBusy.contains(id)) return;
+    setState(() => _favBusy.add(id));
+    try {
+      await UserRepository.instance.toggleFavoriteListener(
+        listenerId: id,
+        isFavoriteNow: isFavoriteNow,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not update favorites. Please try again.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _favBusy.remove(id));
+    }
+  }
 
   /// True when a mood is picked that actually filters ('Just talk' has no
   /// keywords, so it never narrows the list).
@@ -312,6 +337,86 @@ class _DiscoverPageState extends State<_DiscoverPage> {
   void _openSearch() {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const MatchAndCallScreen()),
+    );
+  }
+
+  /// Horizontal strip of the speaker's favourited listeners who are available
+  /// right now — one tap back to someone they already trust.
+  Widget _yourPeopleRow(List<AppUserModel> favorites) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Your people',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: AppPalette.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 90,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: favorites.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 14),
+            itemBuilder: (context, i) {
+              final u = favorites[i];
+              final online = u.isAvailable && !u.isOnCall;
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _openProfile(u),
+                child: SizedBox(
+                  width: 62,
+                  child: Column(
+                    children: [
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          _Avatar(
+                            initials: _initialsFromName(u.safeDisplayName),
+                            photoUrl: u.photoURL,
+                            size: 56,
+                          ),
+                          if (online)
+                            Positioned(
+                              right: 0,
+                              bottom: 0,
+                              child: Container(
+                                width: 15,
+                                height: 15,
+                                decoration: BoxDecoration(
+                                  color: AppPalette.online,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: AppPalette.card,
+                                    width: 2.5,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        u.safeDisplayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppPalette.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -366,43 +471,65 @@ class _DiscoverPageState extends State<_DiscoverPage> {
                   statusText = '${result.matchCount} great for "$_mood" · '
                       '${all.length} here now';
                 }
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+                return StreamBuilder<AppUserModel?>(
+                  stream: _me,
+                  builder: (context, meSnap) {
+                    final me = meSnap.data;
+                    final favUids =
+                        me?.favoriteListeners.toSet() ?? const <String>{};
+                    final favorites = favUids.isEmpty
+                        ? const <AppUserModel>[]
+                        : all
+                            .where((u) => favUids.contains(u.uid))
+                            .toList(growable: false);
+                    return SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const _OnlineDot(),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              statusText,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: AppPalette.textSecondary,
+                          if (favorites.isNotEmpty) ...[
+                            _yourPeopleRow(favorites),
+                            const SizedBox(height: 18),
+                          ],
+                          Row(
+                            children: [
+                              const _OnlineDot(),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  statusText,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    color: AppPalette.textSecondary,
+                                  ),
+                                ),
                               ),
-                            ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          GridView.count(
+                            crossAxisCount: 2,
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            mainAxisSpacing: 12,
+                            crossAxisSpacing: 12,
+                            childAspectRatio: 0.92,
+                            children: listeners.map((u) {
+                              final fav = favUids.contains(u.uid);
+                              return _ListenerCard(
+                                user: u,
+                                onTap: () => _openProfile(u),
+                                isFavorite: fav,
+                                onToggleFavorite: me == null
+                                    ? null
+                                    : () => _toggleFavorite(u.uid, fav),
+                              );
+                            }).toList(),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
-                      GridView.count(
-                        crossAxisCount: 2,
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        mainAxisSpacing: 12,
-                        crossAxisSpacing: 12,
-                        childAspectRatio: 0.92,
-                        children: listeners
-                            .map((u) => _ListenerCard(
-                                  user: u,
-                                  onTap: () => _openProfile(u),
-                                ))
-                            .toList(),
-                      ),
-                    ],
-                  ),
+                    );
+                  },
                 );
               },
             ),
@@ -484,9 +611,18 @@ class _DiscoverPageState extends State<_DiscoverPage> {
 }
 
 class _ListenerCard extends StatelessWidget {
-  const _ListenerCard({required this.user, required this.onTap});
+  const _ListenerCard({
+    required this.user,
+    required this.onTap,
+    this.isFavorite = false,
+    this.onToggleFavorite,
+  });
   final AppUserModel user;
   final VoidCallback onTap;
+  final bool isFavorite;
+
+  /// Null while the current user is still loading — the heart is hidden then.
+  final VoidCallback? onToggleFavorite;
 
   String get _ratingLabel =>
       user.ratingCount <= 0 ? 'New' : user.ratingAvg.toStringAsFixed(1);
@@ -559,6 +695,25 @@ class _ListenerCard extends StatelessWidget {
                 ),
                 const Spacer(),
                 if (_online) const _OnlineDot(),
+                if (onToggleFavorite != null) ...[
+                  const SizedBox(width: 4),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onToggleFavorite,
+                    child: Padding(
+                      padding: const EdgeInsets.all(2),
+                      child: Icon(
+                        isFavorite
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
+                        size: 20,
+                        color: isFavorite
+                            ? AppPalette.rose
+                            : AppPalette.textMuted,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 10),
