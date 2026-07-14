@@ -1250,7 +1250,6 @@ class _ChatsPageState extends State<_ChatsPage> {
       );
 
   String _str(dynamic v) => v is String ? v : '';
-  int _int(dynamic v) => v is num ? v.toInt() : 0;
 
   void _openChat(Map<String, dynamic> s, AppUserModel? other) {
     final speakerId = _str(s['speakerId']);
@@ -1335,10 +1334,8 @@ class _ChatsPageState extends State<_ChatsPage> {
     final listenerId = _str(s['listenerId']);
     final otherUid = speakerId == _myUid ? listenerId : speakerId;
     final lastMessage = _str(s['lastMessageText']);
-    final iAmSpeaker = speakerId == _myUid;
-    final unread = iAmSpeaker
-        ? _int(s['speakerUnreadCount'])
-        : _int(s['listenerUnreadCount']);
+    // Same tested source of truth as the Chats-tab badge.
+    final unread = ChatUnread.unreadFor(s, _myUid);
     final wantsCall =
         s['callRequestOpen'] == true && _str(s['pendingFor']) == _myUid;
 
