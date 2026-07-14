@@ -82,6 +82,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.dispose();
   }
 
+  // Tappable presets, mirroring onboarding. Topic wording contains the
+  // Discover mood keywords (lonely, stress, work, breakup, relationship,
+  // listen) so picking them makes a listener match those moods.
+  static const List<String> _suggestedTopics = <String>[
+    'Loneliness',
+    'Stress & anxiety',
+    'Work & career',
+    'Breakup',
+    'Relationships',
+    'Study & exams',
+    'Family',
+    'Just listening',
+  ];
+
+  static const List<String> _suggestedLanguages = <String>[
+    'English',
+    'Hindi',
+    'Tamil',
+    'Telugu',
+    'Bengali',
+    'Marathi',
+    'Punjabi',
+    'Kannada',
+  ];
+
   List<String> _splitCsv(String value) {
     final seen = <String>{};
     final out = <String>[];
@@ -98,6 +123,70 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     return out;
+  }
+
+  bool _csvContains(TextEditingController c, String value) => _splitCsv(c.text)
+      .any((item) => item.toLowerCase() == value.toLowerCase());
+
+  void _toggleCsv(TextEditingController c, String value) {
+    final items = _splitCsv(c.text);
+    final idx =
+        items.indexWhere((i) => i.toLowerCase() == value.toLowerCase());
+    if (idx >= 0) {
+      items.removeAt(idx);
+    } else {
+      items.add(value);
+    }
+    final text = items.join(', ');
+    c.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    setState(() {});
+  }
+
+  Widget _suggestionChips(TextEditingController c, List<String> options) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Wrap(
+        spacing: 7,
+        runSpacing: 7,
+        children: options.map((option) {
+          final selected = _csvContains(c, option);
+          return InkWell(
+            borderRadius: BorderRadius.circular(999),
+            onTap: () => _toggleCsv(c, option),
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                color: selected ? AppPalette.blue : AppPalette.blueTint,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    selected ? Icons.check_rounded : Icons.add_rounded,
+                    size: 14,
+                    color: selected ? Colors.white : AppPalette.blue,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    option,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: selected ? Colors.white : AppPalette.blue,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
   }
 
   Future<void> _validateProfilePhoto(XFile picked) async {
@@ -1784,19 +1873,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           const SizedBox(height: 8),
                           TextField(
                             controller: _topics,
+                            onChanged: (_) => setState(() {}),
                             decoration: const InputDecoration(
                               labelText: 'Comma separated topics',
                             ),
                           ),
+                          _suggestionChips(_topics, _suggestedTopics),
                           const SizedBox(height: 10),
                           _label('Languages'),
                           const SizedBox(height: 8),
                           TextField(
                             controller: _languages,
+                            onChanged: (_) => setState(() {}),
                             decoration: const InputDecoration(
                               labelText: 'Comma separated languages',
                             ),
                           ),
+                          _suggestionChips(_languages, _suggestedLanguages),
                         ],
                         if (accountOnly) ...[
                           _label('Gender'),

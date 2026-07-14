@@ -44,6 +44,31 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     super.dispose();
   }
 
+  // Tappable presets. Topic wording deliberately contains the Discover mood
+  // keywords (lonely, stress, work, breakup, relationship, listen) so a
+  // listener who taps these actually shows up when someone picks that mood.
+  static const List<String> _suggestedTopics = <String>[
+    'Loneliness',
+    'Stress & anxiety',
+    'Work & career',
+    'Breakup',
+    'Relationships',
+    'Study & exams',
+    'Family',
+    'Just listening',
+  ];
+
+  static const List<String> _suggestedLanguages = <String>[
+    'English',
+    'Hindi',
+    'Tamil',
+    'Telugu',
+    'Bengali',
+    'Marathi',
+    'Punjabi',
+    'Kannada',
+  ];
+
   List<String> _splitCsv(String value) {
     final seen = <String>{};
     final out = <String>[];
@@ -56,6 +81,75 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       out.add(item);
     }
     return out;
+  }
+
+  bool _csvContains(TextEditingController c, String value) => _splitCsv(c.text)
+      .any((item) => item.toLowerCase() == value.toLowerCase());
+
+  /// Add the preset if missing, remove it if already there, then rewrite the
+  /// field so hand-typed entries are preserved and the caret stays at the end.
+  void _toggleCsv(TextEditingController c, String value) {
+    if (_saving) return;
+    final items = _splitCsv(c.text);
+    final idx =
+        items.indexWhere((i) => i.toLowerCase() == value.toLowerCase());
+    if (idx >= 0) {
+      items.removeAt(idx);
+    } else {
+      items.add(value);
+    }
+    final text = items.join(', ');
+    c.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    setState(() {});
+  }
+
+  Widget _suggestionChips(TextEditingController c, List<String> options) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Wrap(
+        spacing: 7,
+        runSpacing: 7,
+        children: options.map((option) {
+          final selected = _csvContains(c, option);
+          return InkWell(
+            borderRadius: BorderRadius.circular(999),
+            onTap: () => _toggleCsv(c, option),
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                color: selected ? AppPalette.blue : AppPalette.blueTint,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    selected
+                        ? Icons.check_rounded
+                        : Icons.add_rounded,
+                    size: 14,
+                    color: selected ? Colors.white : AppPalette.blue,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    option,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: selected ? Colors.white : AppPalette.blue,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
   }
 
   void _showSnack(String text) {
@@ -531,20 +625,36 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             controller: _topicsController,
             enabled: !_saving,
             textInputAction: TextInputAction.next,
+            onChanged: (_) => setState(() {}),
             decoration: const InputDecoration(
               labelText: 'Topics',
               hintText: 'Stress, career, relationships',
             ),
           ),
-          const SizedBox(height: 10),
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text(
+              'Tap what you can talk about — the more you add, the more people find you.',
+              style: TextStyle(
+                fontSize: 12.5,
+                color: AppPalette.textSecondary,
+                fontWeight: FontWeight.w600,
+                height: 1.3,
+              ),
+            ),
+          ),
+          _suggestionChips(_topicsController, _suggestedTopics),
+          const SizedBox(height: 14),
           TextField(
             controller: _languagesController,
             enabled: !_saving,
+            onChanged: (_) => setState(() {}),
             decoration: const InputDecoration(
               labelText: 'Languages',
               hintText: 'English, Hindi',
             ),
           ),
+          _suggestionChips(_languagesController, _suggestedLanguages),
           const SizedBox(height: 14),
           _intentChoice(
             value: 'talk',
