@@ -491,6 +491,52 @@ class _ListenerCard extends StatelessWidget {
 
   bool get _online => user.isAvailable && !user.isOnCall;
 
+  /// Up to two topic chips (falls back to languages), plus a "+N" pill when
+  /// there are more. Fills the card's dead space and tells people at a glance
+  /// what a listener is here for. Collapses to nothing when neither is set.
+  Widget _chipsRow() {
+    final source = user.topics.isNotEmpty ? user.topics : user.languages;
+    final tags = source
+        .map((t) => t.trim())
+        .where((t) => t.isNotEmpty)
+        .toList(growable: false);
+    if (tags.isEmpty) return const SizedBox.shrink();
+    final shown = tags.take(2).toList();
+    final extra = tags.length - shown.length;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: [
+          for (final t in shown) ...[
+            Flexible(child: _chip(t)),
+            const SizedBox(width: 5),
+          ],
+          if (extra > 0) _chip('+$extra', strong: true),
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(String label, {bool strong = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppPalette.blueTint,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: strong ? FontWeight.w700 : FontWeight.w500,
+          color: AppPalette.blue,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -541,6 +587,7 @@ class _ListenerCard extends StatelessWidget {
                 ),
               ],
             ),
+            _chipsRow(),
             const Spacer(),
             SizedBox(
               width: double.infinity,
