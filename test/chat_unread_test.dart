@@ -68,4 +68,33 @@ void main() {
       expect(ChatUnread.conversationsWithUnread(const [], 'me'), 0);
     });
   });
+
+  group('stays keyed to the raw speaker/listener fields (matches backend)', () {
+    // INVARIANT — do not "fix" this with ChatDirectionResolver.
+    //
+    // The backend (functions/src/triggers.js -> unreadFieldForUser) increments
+    // speakerUnreadCount / listenerUnreadCount purely by which RAW field
+    // (session.speakerId / session.listenerId) holds the receiver's uid — not
+    // by resolved display roles. So the read side must use the same raw fields,
+    // or it reads the other participant's counter.
+    //
+    // This fixture has swapped-looking roles: my uid ('speaker_z') sits in the
+    // listenerId field, while an unrelated uid is the speakerId. Reading my
+    // unread must therefore follow the raw listenerId -> listenerUnreadCount.
+    // ChatDirectionResolver would report iAmListener == false here (see
+    // recent_chat_direction_test) and pick speakerUnreadCount — the wrong one.
+    test('reads the counter for the raw field that holds my uid', () {
+      final session = <String, dynamic>{
+        'speakerId': 'listener_a', // not me
+        'listenerId': 'speaker_z', // me
+        'speakerUnreadCount': 5, // the other participant's unread
+        'listenerUnreadCount': 2, // mine
+      };
+      expect(ChatUnread.unreadFor(session, 'speaker_z'), 2);
+      expect(
+        ChatUnread.conversationsWithUnread(<Map<String, dynamic>>[session], 'speaker_z'),
+        1,
+      );
+    });
+  });
 }
