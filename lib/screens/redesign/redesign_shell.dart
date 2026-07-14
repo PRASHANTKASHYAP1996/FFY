@@ -24,9 +24,9 @@ import '../profile_screen.dart';
 import '../wallet_details_screen.dart';
 import 'blocked_users_screen.dart';
 
-/// Phase 1 of the redesign: the new 5-tab shell + light-blue theme.
-/// Discover is built out to match the agreed direction; the other tabs are
-/// themed placeholders that get their real screens in later phases.
+/// The app's main shell: a 5-tab IndexedStack (Discover, Chats, Call center,
+/// Feed, Me) on the light-blue theme. Reached via MainShellScreen once the
+/// user is signed in.
 class RedesignShell extends StatefulWidget {
   const RedesignShell({super.key});
 
