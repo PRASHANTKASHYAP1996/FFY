@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../core/constants/firestore_paths.dart';
 import '../../core/theme/app_palette.dart';
 import '../../repositories/call_repository.dart';
 import '../../repositories/social_repository.dart';
 import '../../repositories/user_repository.dart';
+import '../../shared/call_ready_resolver.dart';
 import '../../shared/discover_ranking.dart';
 import '../../shared/models/app_user_model.dart';
 import '../../shared/models/social_post_model.dart';
@@ -1430,6 +1430,41 @@ class _ChatsPageState extends State<_ChatsPage> {
 // Call (the primary action — fast path into a match + call)
 // ---------------------------------------------------------------------------
 
+/// Adapter exposing CallRepository's pure session helpers to CallReadyResolver.
+class _CallRepoSessionAccess implements SessionCallAccess {
+  const _CallRepoSessionAccess(this._repo);
+
+  final CallRepository _repo;
+
+  @override
+  List<String> sessionParticipantIds(Map<String, dynamic> session) =>
+      _repo.sessionParticipantIds(session);
+
+  @override
+  bool sessionAllowsCallForDirection({
+    required Map<String, dynamic> session,
+    required String speakerId,
+    required String listenerId,
+  }) =>
+      _repo.sessionAllowsCallForDirection(
+        session: session,
+        speakerId: speakerId,
+        listenerId: listenerId,
+      );
+
+  @override
+  bool sessionIdentityLooksComplete({
+    required Map<String, dynamic> session,
+    required String speakerId,
+    required String listenerId,
+  }) =>
+      _repo.sessionIdentityLooksComplete(
+        session: session,
+        speakerId: speakerId,
+        listenerId: listenerId,
+      );
+}
+
 class _CallPage extends StatefulWidget {
   const _CallPage();
 
@@ -1476,68 +1511,11 @@ class _CallPageState extends State<_CallPage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
-  /// Listeners the current user already has an accepted (call-allowed) chat
-  /// session with — ported verbatim from the old Wallet "Calls hub" so the
-  /// underlying access rules are unchanged.
-  List<AppUserModel> _callReadyListeners({
-    required AppUserModel me,
-    required List<AppUserModel> listeners,
-    required List<Map<String, dynamic>> sessions,
-  }) {
-    final candidates = listeners
-        .where((u) => u.uid.trim().isNotEmpty && u.uid != me.uid)
-        .toList(growable: false);
-
-    final sessionByListener = <String, Map<String, dynamic>>{};
-    for (final session in sessions) {
-      if (session['exists'] != true) continue;
-      final ids = _callRepository.sessionParticipantIds(session).toSet();
-      if (!ids.contains(me.uid)) continue;
-      for (final listener in candidates) {
-        if (ids.contains(listener.uid)) {
-          sessionByListener[listener.uid] = session;
-        }
-      }
-    }
-
-    return candidates.where((listener) {
-      final session = sessionByListener[listener.uid];
-      if (session == null) return false;
-      final blocked = session[FirestorePaths.fieldSpeakerBlocked] == true ||
-          session[FirestorePaths.fieldListenerBlocked] == true;
-      if (blocked) return false;
-      return _sessionAllowsCallAccess(
-        session: session,
-        me: me,
-        listener: listener,
-      );
-    }).toList(growable: false);
-  }
-
-  bool _sessionAllowsCallAccess({
-    required Map<String, dynamic> session,
-    required AppUserModel me,
-    required AppUserModel listener,
-  }) {
-    final strictAllowed = _callRepository.sessionAllowsCallForDirection(
-      session: session,
-      speakerId: me.uid,
-      listenerId: listener.uid,
-    );
-    if (strictAllowed) return true;
-
-    final status = (session[FirestorePaths.fieldChatStatus] ?? '').toString();
-    if (status != FirestorePaths.chatStatusAccepted) return false;
-
-    final actualListenerId =
-        (session[FirestorePaths.fieldActualListenerId] ?? '').toString().trim();
-    return actualListenerId == listener.uid.trim() &&
-        _callRepository.sessionIdentityLooksComplete(
-          session: session,
-          speakerId: me.uid,
-          listenerId: listener.uid,
-        );
-  }
+  /// Resolves which accepted contacts can be quick-called. The access rules
+  /// live in CallReadyResolver (unit tested); this adapter just forwards the
+  /// pure session helpers from CallRepository.
+  late final CallReadyResolver _readyResolver =
+      CallReadyResolver(_CallRepoSessionAccess(_callRepository));
 
   Future<void> _startCall(AppUserModel me, AppUserModel listener) async {
     if (_callingFor.isNotEmpty) return;
@@ -1711,8 +1689,8 @@ class _CallPageState extends State<_CallPage> {
                     listeners.isEmpty) ||
                 (sessionsSnap.connectionState == ConnectionState.waiting &&
                     sessions.isEmpty);
-            final ready = _callReadyListeners(
-              me: me,
+            final ready = _readyResolver.callReadyListeners(
+              myUid: me.uid,
               listeners: listeners,
               sessions: sessions,
             );
