@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/theme/app_palette.dart';
+import '../../repositories/admin_repository.dart';
 import '../../repositories/call_repository.dart';
 import '../../repositories/social_repository.dart';
 import '../../repositories/user_repository.dart';
@@ -11,6 +12,7 @@ import '../../shared/discover_ranking.dart';
 import '../../shared/relative_time.dart';
 import '../../shared/models/app_user_model.dart';
 import '../../shared/models/social_post_model.dart';
+import '../admin_dashboard_screen.dart';
 import '../call_history_screen.dart';
 import '../caller_waiting_screen.dart';
 import '../chat_conversation_screen.dart';
@@ -1022,6 +1024,9 @@ class _MePage extends StatefulWidget {
 
 class _MePageState extends State<_MePage> {
   final Stream<AppUserModel?> _me = UserRepository.instance.watchMe();
+  // Resolved once: a server round-trip (adminGetDashboard_v1) that only the
+  // real admin passes, so the row below is truly admin-gated, not cosmetic.
+  final Future<bool> _isAdmin = AdminRepository.instance.isCurrentUserAdmin();
 
   void _open(Widget screen) {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
@@ -1121,6 +1126,15 @@ class _MePageState extends State<_MePage> {
                   () => _open(const BlockedUsersScreen())),
               _menuRow(Icons.help_outline_rounded, 'Help and support',
                   () => _open(const HelpSupportScreen())),
+              // Admins only: shown once the server confirms admin access.
+              FutureBuilder<bool>(
+                future: _isAdmin,
+                builder: (context, snap) {
+                  if (snap.data != true) return const SizedBox.shrink();
+                  return _menuRow(Icons.shield_outlined, 'Admin dashboard',
+                      () => _open(const AdminDashboardScreen()));
+                },
+              ),
               _menuRow(Icons.logout_rounded, 'Log out', _logout, danger: true),
             ],
           );
