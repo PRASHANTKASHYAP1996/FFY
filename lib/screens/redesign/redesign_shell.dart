@@ -6,7 +6,9 @@ import '../../repositories/call_repository.dart';
 import '../../repositories/social_repository.dart';
 import '../../repositories/user_repository.dart';
 import '../../shared/call_ready_resolver.dart';
+import '../../shared/chat_unread.dart';
 import '../../shared/discover_ranking.dart';
+import '../../shared/relative_time.dart';
 import '../../shared/models/app_user_model.dart';
 import '../../shared/models/social_post_model.dart';
 import '../call_history_screen.dart';
@@ -50,18 +52,6 @@ class _RedesignShellState extends State<RedesignShell> {
       CallRepository.instance.watchCurrentUserChatSessions();
   final String _myUid = UserRepository.instance.myUidOrNull ?? '';
 
-  /// Number of conversations with unread messages (for the Chats tab badge).
-  int _unreadChats(List<Map<String, dynamic>> sessions) {
-    var count = 0;
-    for (final s in sessions) {
-      final unread = s['speakerId'] == _myUid
-          ? s['speakerUnreadCount']
-          : s['listenerUnreadCount'];
-      if (unread is num && unread > 0) count++;
-    }
-    return count;
-  }
-
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -78,8 +68,10 @@ class _RedesignShellState extends State<RedesignShell> {
           builder: (context, snap) => _BottomNav(
             index: _index,
             onTap: (i) => setState(() => _index = i),
-            chatsUnread:
-                _unreadChats(snap.data ?? const <Map<String, dynamic>>[]),
+            chatsUnread: ChatUnread.conversationsWithUnread(
+              snap.data ?? const <Map<String, dynamic>>[],
+              _myUid,
+            ),
           ),
         ),
       ),
@@ -1893,21 +1885,6 @@ class _CallPageState extends State<_CallPage> {
 // Feed (posts from people you follow — every post routes back to a call)
 // ---------------------------------------------------------------------------
 
-String _timeAgo(int ms) {
-  if (ms <= 0) return '';
-  final diff = DateTime.now().millisecondsSinceEpoch - ms;
-  if (diff < 60000) return 'now';
-  final mins = diff ~/ 60000;
-  if (mins < 60) return '${mins}m';
-  final hours = mins ~/ 60;
-  if (hours < 24) return '${hours}h';
-  final days = hours ~/ 24;
-  if (days < 7) return '${days}d';
-  if (days < 35) return '${days ~/ 7}w';
-  if (days < 365) return '${days ~/ 30}mo';
-  return '${days ~/ 365}y';
-}
-
 class _FeedPage extends StatefulWidget {
   const _FeedPage({required this.onGoToDiscover});
 
@@ -2262,7 +2239,7 @@ class _FeedPostCardState extends State<_FeedPostCard> {
               ),
             ),
             Text(
-              _timeAgo(_post.createdAtMs),
+              RelativeTime.format(_post.createdAtMs),
               style: const TextStyle(fontSize: 12, color: AppPalette.textMuted),
             ),
           ],
