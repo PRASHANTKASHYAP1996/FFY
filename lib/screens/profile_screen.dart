@@ -39,7 +39,11 @@ enum _ProfileMenuAction {
 }
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  const ProfileScreen({super.key, this.openComposer = false});
+
+  /// When true, the "New post" composer sheet opens automatically once the
+  /// profile has loaded — used by the Feed's composer entry.
+  final bool openComposer;
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -66,6 +70,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   bool _saving = false;
   bool _initialized = false;
+  bool _composerAutoOpened = false;
   bool _deleteRequestBusy = false;
   bool _signingOut = false;
   int _profileRetryToken = 0;
@@ -2544,6 +2549,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
         final me = snap.data!;
         _fillControllersOnce(me);
+
+        // Feed "share what's on your mind" entry: open the composer once the
+        // profile is ready, without the user hunting for the + button.
+        if (widget.openComposer && !_composerAutoOpened) {
+          _composerAutoOpened = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _showCreatePostSheet(me);
+          });
+        }
 
         final currentName = _displayName(me);
         final photoURL = me.photoURL.trim();

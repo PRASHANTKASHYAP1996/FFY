@@ -34,13 +34,16 @@ class RedesignShell extends StatefulWidget {
 class _RedesignShellState extends State<RedesignShell> {
   int _index = 0;
 
-  static const List<Widget> _pages = <Widget>[
-    _DiscoverPage(),
-    _ChatsPage(),
-    _CallPage(),
-    _FeedPage(),
-    _MePage(),
-  ];
+  // Built each frame so _FeedPage can carry a tab-switch callback. IndexedStack
+  // keeps each child's State alive (same runtime type per slot), so rebuilding
+  // the list does not reset any tab.
+  List<Widget> get _pages => <Widget>[
+        const _DiscoverPage(),
+        const _ChatsPage(),
+        const _CallPage(),
+        _FeedPage(onGoToDiscover: () => setState(() => _index = 0)),
+        const _MePage(),
+      ];
 
   final Stream<List<Map<String, dynamic>>> _sessions =
       CallRepository.instance.watchCurrentUserChatSessions();
@@ -2006,7 +2009,10 @@ String _timeAgo(int ms) {
 }
 
 class _FeedPage extends StatefulWidget {
-  const _FeedPage();
+  const _FeedPage({required this.onGoToDiscover});
+
+  /// Jumps the shell to the Discover tab (used by the empty-state CTA).
+  final VoidCallback onGoToDiscover;
 
   @override
   State<_FeedPage> createState() => _FeedPageState();
@@ -2019,7 +2025,71 @@ class _FeedPageState extends State<_FeedPage> {
 
   void _openComposer() {
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const ProfileScreen()),
+      MaterialPageRoute(
+        builder: (_) => const ProfileScreen(openComposer: true),
+      ),
+    );
+  }
+
+  Widget _emptyFeed() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 76,
+              height: 76,
+              decoration: const BoxDecoration(
+                color: AppPalette.blueTint,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.groups_2_rounded,
+                  color: AppPalette.blue, size: 36),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Your feed is quiet 🌙',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: AppPalette.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Follow people from Discover to see what they share — '
+              'and reach them with a tap.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.45,
+                color: AppPalette.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: widget.onGoToDiscover,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppPalette.blue,
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              icon: const Icon(Icons.explore_rounded, size: 18),
+              label: const Text(
+                'Find people to follow',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -2065,10 +2135,7 @@ class _FeedPageState extends State<_FeedPage> {
                             p.ownerId == myUid || following.contains(p.ownerId))
                         .toList(growable: false);
                     if (visible.isEmpty) {
-                      return const _DiscoverMessage(
-                        'Your feed is quiet 🌙\n'
-                        'Follow people from Discover to see what they share.',
-                      );
+                      return _emptyFeed();
                     }
                     return ListView.builder(
                       padding: const EdgeInsets.only(top: 10, bottom: 24),
@@ -2305,6 +2372,9 @@ class _FeedPostCardState extends State<_FeedPostCard> {
   }
 
   Widget _actions() {
+    var firstName = _post.ownerName.trim().split(RegExp(r'\s+')).first;
+    if (firstName.length > 12) firstName = '${firstName.substring(0, 12)}…';
+    final talkLabel = firstName.isEmpty ? 'Talk' : 'Talk to $firstName';
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 6, 12, 10),
       child: Row(
@@ -2388,9 +2458,10 @@ class _FeedPostCardState extends State<_FeedPostCard> {
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
             icon: const Icon(Icons.phone_rounded, size: 16),
-            label: const Text(
-              'Talk to them',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            label: Text(
+              talkLabel,
+              style:
+                  const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
           ),
         ],
