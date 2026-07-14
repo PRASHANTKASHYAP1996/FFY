@@ -269,6 +269,66 @@ class _DiscoverPageState extends State<_DiscoverPage> {
       UserRepository.instance.watchAvailableListeners();
   final Stream<AppUserModel?> _me = UserRepository.instance.watchMe();
 
+  final TextEditingController _searchController = TextEditingController();
+  String _query = '';
+  String _languageFilter = '';
+  bool _sortLowToHigh = false;
+
+  static const List<String> _filterLanguages = <String>[
+    'English',
+    'Hindi',
+    'Tamil',
+    'Telugu',
+    'Bengali',
+    'Marathi',
+    'Punjabi',
+    'Kannada',
+  ];
+
+  bool get _filtersActive =>
+      _query.trim().isNotEmpty || _languageFilter.isNotEmpty || _sortLowToHigh;
+
+  void _clearFilters() {
+    _searchController.clear();
+    setState(() {
+      _query = '';
+      _languageFilter = '';
+      _sortLowToHigh = false;
+    });
+  }
+
+  /// Narrow the available list by the search text and language chip. Mood and
+  /// price sort are applied afterwards on the result.
+  List<AppUserModel> _applyFilters(List<AppUserModel> all) {
+    final query = _query.trim().toLowerCase();
+    final lang = _languageFilter.toLowerCase();
+    if (query.isEmpty && lang.isEmpty) return all;
+    return all.where((u) {
+      if (query.isNotEmpty) {
+        final hay = <String>[
+          u.safeDisplayName,
+          u.bio,
+          u.city,
+          u.state,
+          ...u.topics,
+          ...u.languages,
+        ].join(' ').toLowerCase();
+        if (!hay.contains(query)) return false;
+      }
+      if (lang.isNotEmpty &&
+          !u.languages.any((l) => l.toLowerCase() == lang)) {
+        return false;
+      }
+      return true;
+    }).toList(growable: false);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   // uids with an in-flight favorite toggle, to swallow rapid double-taps.
   final Set<String> _favBusy = <String>{};
 
@@ -334,9 +394,71 @@ class _DiscoverPageState extends State<_DiscoverPage> {
     );
   }
 
-  void _openSearch() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const MatchAndCallScreen()),
+  Widget _filterChip({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+    IconData? icon,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? AppPalette.blue : AppPalette.feedBg,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected ? AppPalette.blue : AppPalette.border,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon,
+                  size: 14,
+                  color: selected ? Colors.white : AppPalette.textSecondary),
+              const SizedBox(width: 4),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: selected ? Colors.white : AppPalette.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _noMatches() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 26),
+      child: Column(
+        children: [
+          const Icon(Icons.search_off_rounded,
+              size: 34, color: AppPalette.textMuted),
+          const SizedBox(height: 12),
+          const Text(
+            'No listeners match your filters.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 14,
+              color: AppPalette.textSecondary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 14),
+          OutlinedButton(
+            onPressed: _clearFilters,
+            child: const Text('Clear filters'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -458,11 +580,21 @@ class _DiscoverPageState extends State<_DiscoverPage> {
                     'Check back in a little while.',
                   );
                 }
-                // Moods re-order but never empty the grid.
-                final result = _orderByMood(all);
-                final listeners = result.ordered;
+                final filtered = _applyFilters(all);
+                // Mood re-orders the filtered set (best matches first) but
+                // never hides anyone within it.
+                final result = _orderByMood(filtered);
+                var listeners = result.ordered;
+                if (_sortLowToHigh) {
+                  listeners = [...listeners]
+                    ..sort((a, b) => a.listenerRate.compareTo(b.listenerRate));
+                }
                 final String statusText;
-                if (!_moodActive) {
+                if (_filtersActive) {
+                  final n = filtered.length;
+                  statusText =
+                      n == 0 ? 'No matches' : '$n ${n == 1 ? 'match' : 'matches'}';
+                } else if (!_moodActive) {
                   statusText = '${all.length} here for you now';
                 } else if (result.matchCount == 0) {
                   statusText = "No one's tagged for \"$_mood\" yet — "
@@ -504,28 +636,48 @@ class _DiscoverPageState extends State<_DiscoverPage> {
                                   ),
                                 ),
                               ),
+                              if (_filtersActive && listeners.isNotEmpty)
+                                GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: _clearFilters,
+                                  child: const Padding(
+                                    padding: EdgeInsets.symmetric(
+                                        horizontal: 4, vertical: 2),
+                                    child: Text(
+                                      'Clear',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppPalette.blue,
+                                      ),
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
                           const SizedBox(height: 12),
-                          GridView.count(
-                            crossAxisCount: 2,
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            mainAxisSpacing: 12,
-                            crossAxisSpacing: 12,
-                            childAspectRatio: 0.92,
-                            children: listeners.map((u) {
-                              final fav = favUids.contains(u.uid);
-                              return _ListenerCard(
-                                user: u,
-                                onTap: () => _openProfile(u),
-                                isFavorite: fav,
-                                onToggleFavorite: me == null
-                                    ? null
-                                    : () => _toggleFavorite(u.uid, fav),
-                              );
-                            }).toList(),
-                          ),
+                          if (listeners.isEmpty)
+                            _noMatches()
+                          else
+                            GridView.count(
+                              crossAxisCount: 2,
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              mainAxisSpacing: 12,
+                              crossAxisSpacing: 12,
+                              childAspectRatio: 0.92,
+                              children: listeners.map((u) {
+                                final fav = favUids.contains(u.uid);
+                                return _ListenerCard(
+                                  user: u,
+                                  onTap: () => _openProfile(u),
+                                  isFavorite: fav,
+                                  onToggleFavorite: me == null
+                                      ? null
+                                      : () => _toggleFavorite(u.uid, fav),
+                                );
+                              }).toList(),
+                            ),
                         ],
                       ),
                     );
@@ -546,35 +698,60 @@ class _DiscoverPageState extends State<_DiscoverPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'How are you feeling?',
-                    style: TextStyle(
-                      fontSize: 19,
-                      fontWeight: FontWeight.w700,
-                      color: AppPalette.textPrimary,
+          const Text(
+            'How are you feeling?',
+            style: TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.w700,
+              color: AppPalette.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 3),
+          const Text(
+            "someone's here for you 🌙",
+            style: TextStyle(fontSize: 13, color: AppPalette.textSecondary),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _searchController,
+            onChanged: (v) => setState(() => _query = v),
+            textInputAction: TextInputAction.search,
+            style: const TextStyle(fontSize: 14, color: AppPalette.textPrimary),
+            decoration: InputDecoration(
+              isDense: true,
+              filled: true,
+              fillColor: AppPalette.feedBg,
+              hintText: 'Search name, topic, language',
+              hintStyle:
+                  const TextStyle(fontSize: 14, color: AppPalette.textMuted),
+              prefixIcon: const Icon(Icons.search_rounded,
+                  size: 20, color: AppPalette.textMuted),
+              suffixIcon: _query.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.close_rounded,
+                          size: 18, color: AppPalette.textMuted),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _query = '');
+                      },
                     ),
-                  ),
-                  SizedBox(height: 3),
-                  Text(
-                    "someone's here for you 🌙",
-                    style: TextStyle(
-                        fontSize: 13, color: AppPalette.textSecondary),
-                  ),
-                ],
+              contentPadding:
+                  const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
               ),
-              IconButton(
-                tooltip: 'Search listeners',
-                onPressed: _openSearch,
-                icon: const Icon(Icons.search_rounded,
-                    color: AppPalette.textSecondary, size: 24),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
               ),
-            ],
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide:
+                    const BorderSide(color: AppPalette.blue, width: 1.4),
+              ),
+            ),
           ),
           const SizedBox(height: 12),
           Wrap(
@@ -603,6 +780,38 @@ class _DiscoverPageState extends State<_DiscoverPage> {
                 ),
               );
             }),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 36,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: EdgeInsets.zero,
+              children: [
+                _filterChip(
+                  label: 'Low price',
+                  icon: Icons.sort_rounded,
+                  selected: _sortLowToHigh,
+                  onTap: () =>
+                      setState(() => _sortLowToHigh = !_sortLowToHigh),
+                ),
+                const SizedBox(width: 7),
+                for (final lang in _filterLanguages) ...[
+                  _filterChip(
+                    label: lang,
+                    selected:
+                        _languageFilter.toLowerCase() == lang.toLowerCase(),
+                    onTap: () => setState(() {
+                      _languageFilter =
+                          _languageFilter.toLowerCase() == lang.toLowerCase()
+                              ? ''
+                              : lang;
+                    }),
+                  ),
+                  const SizedBox(width: 7),
+                ],
+              ],
+            ),
           ),
         ],
       ),
