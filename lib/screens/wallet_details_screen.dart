@@ -6,15 +6,10 @@ import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 import '../core/constants/firestore_paths.dart';
 import '../core/theme/app_palette.dart';
-import '../repositories/call_repository.dart';
-import '../repositories/user_repository.dart';
 import '../repositories/wallet_repository.dart';
 import '../services/app_log.dart';
 import '../shared/models/app_user_model.dart';
 import '../shared/wallet_amount_formatter.dart';
-import 'call_history_screen.dart';
-import 'caller_waiting_screen.dart';
-import 'listener_profile_screen.dart';
 
 const bool _razorpayTopupEnabled =
     bool.fromEnvironment('FRIENDIFY_RAZORPAY_TOPUP');
@@ -83,9 +78,6 @@ class WalletDetailsScreen extends StatefulWidget {
 }
 
 class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
-  final UserRepository _userRepository = UserRepository.instance;
-  final CallRepository _callRepository = CallRepository.instance;
-  final TextEditingController _callsSearchController = TextEditingController();
   late final Razorpay _razorpay;
 
   String? _currentOrderId;
@@ -94,9 +86,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
   bool _withdrawSheetOpen = false;
   int _walletRetryToken = 0;
   int _ledgerRetryToken = 0;
-  int _callReadyRetryToken = 0;
-  String _callingFor = '';
-  final _WalletStatementFilter _statementFilter = _WalletStatementFilter.all;
+  _WalletStatementFilter _statementFilter = _WalletStatementFilter.all;
 
   @override
   void initState() {
@@ -110,7 +100,6 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
   @override
   void dispose() {
     _razorpay.clear();
-    _callsSearchController.dispose();
     super.dispose();
   }
 
@@ -118,16 +107,11 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     setState(() {
       _walletRetryToken++;
       _ledgerRetryToken++;
-      _callReadyRetryToken++;
     });
   }
 
   void _retryLedgerLoad() {
     setState(() => _ledgerRetryToken++);
-  }
-
-  void _retryCallReadyLoad() {
-    setState(() => _callReadyRetryToken++);
   }
 
   String _safeString(dynamic value, {String fallback = ''}) {
@@ -1029,708 +1013,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     );
   }
 
-  bool _matchesCallSearch(AppUserModel user) {
-    final query = _callsSearchController.text.trim().toLowerCase();
-    if (query.isEmpty) return true;
-
-    final haystack = <String>[
-      user.displayName,
-      user.bio,
-      user.city,
-      user.state,
-      ...user.topics,
-      ...user.languages,
-    ].join(' ').toLowerCase();
-
-    return haystack.contains(query);
-  }
-
-  String _listenerDisplayName(AppUserModel user) {
-    final name = user.displayName.trim();
-    if (name.isNotEmpty) return name;
-    return 'Friendify Listener';
-  }
-
-  Widget _listenerAvatar(AppUserModel user, {double size = 54}) {
-    final photoUrl = user.photoURL.trim();
-    final name = _listenerDisplayName(user);
-
-    Widget fallback() {
-      return Center(
-        child: Text(
-          name.characters.first.toUpperCase(),
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: size * 0.40,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: AppPalette.blue,
-        border: Border.all(
-          color: AppPalette.border,
-          width: 2,
-        ),
-      ),
-      child: ClipOval(
-        child: photoUrl.isEmpty
-            ? fallback()
-            : Image.network(
-                photoUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => fallback(),
-              ),
-      ),
-    );
-  }
-
-  Widget _callsSearchBar() {
-    return TextField(
-      controller: _callsSearchController,
-      onChanged: (_) => setState(() {}),
-      style: const TextStyle(
-        color: AppPalette.textPrimary,
-        fontWeight: FontWeight.w800,
-      ),
-      decoration: InputDecoration(
-        hintText: 'Search call-ready listeners...',
-        hintStyle: const TextStyle(
-          color: AppPalette.textMuted,
-          fontWeight: FontWeight.w800,
-        ),
-        prefixIcon: const Icon(
-          Icons.search_rounded,
-          color: AppPalette.textMuted,
-        ),
-        filled: true,
-        fillColor: AppPalette.feedBg,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 12,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(15),
-          borderSide: const BorderSide(
-            color: AppPalette.border,
-            width: 1.2,
-          ),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(15),
-          borderSide: const BorderSide(
-            color: AppPalette.blue,
-            width: 1.4,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _callsTopBar() {
-    return const Center(
-      child: Text(
-        'Calls',
-        style: TextStyle(
-          color: AppPalette.textPrimary,
-          fontSize: 24,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 0,
-        ),
-      ),
-    );
-  }
-
-  Widget _callsActionTiles({
-    required AppUserModel me,
-    required WalletRepository walletRepository,
-    required List<Map<String, dynamic>> ledgerDocs,
-  }) {
-    return Row(
-      children: [
-        Expanded(
-          child: _callsInfoTile(
-            icon: Icons.account_balance_wallet_rounded,
-            title: 'Wallet',
-            trailing: SizedBox(
-              width: 32,
-              height: 32,
-              child: FilledButton(
-                style: FilledButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  backgroundColor: AppPalette.blue,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                onPressed:
-                    _topupBusy ? null : () => _startTopup(amount: 500, me: me),
-                child: _topupBusy
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.add_rounded, size: 23),
-              ),
-            ),
-            onTap: () => _showWalletSheet(
-              me: me,
-              walletRepository: walletRepository,
-              ledgerDocs: ledgerDocs,
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _callsInfoTile(
-            icon: Icons.receipt_long_rounded,
-            title: 'History',
-            trailing: const Icon(
-              Icons.chevron_right_rounded,
-              color: AppPalette.textMuted,
-            ),
-            onTap: _openCallHistory,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _callsInfoTile({
-    required IconData icon,
-    required String title,
-    required Widget trailing,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: onTap,
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 64),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: AppPalette.feedBg,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: AppPalette.border,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: AppPalette.blue, size: 22),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppPalette.textPrimary,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 14.5,
-                ),
-              ),
-            ),
-            trailing,
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _openCallHistory() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const CallHistoryScreen(),
-      ),
-    );
-  }
-
-  Future<void> _startCall({
-    required AppUserModel me,
-    required AppUserModel listener,
-  }) async {
-    if (_callingFor.isNotEmpty) return;
-
-    final safeListenerId = listener.uid.trim();
-    if (safeListenerId.isEmpty || safeListenerId == me.uid) return;
-    if (_callRepository.hasBlockingCallState) {
-      _showInfoSheet(
-        title: 'Call',
-        body: 'Finish your current call flow first.',
-      );
-      return;
-    }
-
-    setState(() => _callingFor = safeListenerId);
-    try {
-      final canCall = await _callRepository.canCurrentUserCallListener(
-        listenerId: safeListenerId,
-      );
-
-      if (!mounted) return;
-      final readiness = _callRepository.callReadinessForKnownUsers(
-        me: me,
-        listener: listener,
-        hasCallAccess: canCall,
-        requiredCredits: listener.listenerRate > 0 ? listener.listenerRate : 5,
-      );
-      if (!readiness.canStart) {
-        _showInfoSheet(
-          title: 'Call',
-          body: readiness.message,
-        );
-        return;
-      }
-
-      final callStart = await _callRepository.createCallToListener(
-        listenerId: safeListenerId,
-      );
-
-      if (!mounted) return;
-      if (callStart == null) {
-        _showInfoSheet(
-          title: 'Call',
-          body: 'Call could not start. Please try again.',
-        );
-        return;
-      }
-
-      if (!callStart.canOpenWaitingScreen) {
-        _showInfoSheet(
-          title: 'Call',
-          body: 'Call setup is incomplete. Please try again.',
-        );
-        return;
-      }
-
-      await Navigator.push<bool>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => CallerWaitingScreen(
-            callDocRef: callStart.callRef,
-            initialAgoraToken: callStart.agoraToken,
-            initialAgoraUid: callStart.agoraUid,
-            initialChannelId: callStart.channelId,
-          ),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      _showInfoSheet(
-        title: 'Call',
-        body: _callRepository.humanizeCallActionError(e),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _callingFor = '');
-      } else {
-        _callingFor = '';
-      }
-    }
-  }
-
-  void _openListenerProfile(AppUserModel listener) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ListenerProfileScreen(
-          listenerId: listener.uid,
-          initialUser: listener,
-        ),
-      ),
-    );
-  }
-
-  void _showWalletSheet({
-    required AppUserModel me,
-    required WalletRepository walletRepository,
-    required List<Map<String, dynamic>> ledgerDocs,
-  }) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) {
-        var sheetFilter = _statementFilter;
-        return DraggableScrollableSheet(
-          initialChildSize: 0.72,
-          minChildSize: 0.42,
-          maxChildSize: 0.92,
-          builder: (_, controller) {
-            final totalCredits = walletRepository.totalCredits(me);
-            return StatefulBuilder(
-              builder: (_, setSheetState) {
-                final statementDocs = _statementDocsForFilter(
-                  walletRepository,
-                  ledgerDocs,
-                  sheetFilter,
-                );
-
-                return Container(
-                  decoration: const BoxDecoration(
-                    color: AppPalette.card,
-                    borderRadius:
-                        BorderRadius.vertical(top: Radius.circular(24)),
-                  ),
-                  child: ListView(
-                    controller: controller,
-                    padding: const EdgeInsets.fromLTRB(14, 16, 14, 28),
-                    children: [
-                      Center(
-                        child: Container(
-                          width: 48,
-                          height: 5,
-                          decoration: BoxDecoration(
-                            color: AppPalette.textMuted.withValues(alpha: 0.4),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      _walletBalanceCard(totalCredits: totalCredits, me: me),
-                      const SizedBox(height: 14),
-                      Row(
-                        children: [
-                          _walletActionButton(
-                            label: 'Withdraw',
-                            onPressed: !kDebugMode
-                                ? () => _showInfoSheet(
-                                      title: 'Withdrawal',
-                                      body:
-                                          'Withdrawals are available from the debug wallet tools during testing.',
-                                    )
-                                : () =>
-                                    _requestWithdrawalSheet(sheetContext, me),
-                            colors: const [
-                              Color(0xFF2F6FED),
-                              Color(0xFF225CFF),
-                            ],
-                          ),
-                          const SizedBox(width: 10),
-                          _walletActionButton(
-                            label: _topupBusy ? 'Processing...' : 'Top Up',
-                            onPressed: _topupBusy
-                                ? null
-                                : () => _startTopup(amount: 500, me: me),
-                            colors: const [
-                              Color(0xFF3D7BF0),
-                              Color(0xFF6AA0F7),
-                            ],
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 18),
-                      _walletStatementTabsLocal(
-                        selectedFilter: sheetFilter,
-                        onChanged: (filter) {
-                          setSheetState(() => sheetFilter = filter);
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        _statementTitleForFilter(sheetFilter),
-                        style: const TextStyle(
-                          color: AppPalette.textPrimary,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      _compactTransactionList(
-                        walletRepository,
-                        statementDocs,
-                        emptyText: _statementEmptyTextForFilter(sheetFilter),
-                        limit: 30,
-                      ),
-                    ],
-                  ),
-                );
-              },
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _callReadySection({
-    required AppUserModel me,
-    required List<AppUserModel> listeners,
-    required List<Map<String, dynamic>> chatSessions,
-  }) {
-    final filtered = listeners
-        .where((user) => user.uid.trim().isNotEmpty)
-        .where((user) => user.uid != me.uid)
-        .where(_matchesCallSearch)
-        .toList(growable: false);
-    final sessionsByListenerId = <String, Map<String, dynamic>>{};
-
-    for (final session in chatSessions) {
-      if (session['exists'] != true) continue;
-      final participantIds =
-          _callRepository.sessionParticipantIds(session).toSet();
-      if (!participantIds.contains(me.uid)) continue;
-
-      for (final listener in filtered) {
-        if (!participantIds.contains(listener.uid)) continue;
-        sessionsByListenerId[listener.uid] = session;
-      }
-    }
-
-    final callReadyListeners = filtered.where((listener) {
-      final session = sessionsByListenerId[listener.uid];
-      if (session == null) return false;
-      final sessionBlocked =
-          session[FirestorePaths.fieldSpeakerBlocked] == true ||
-              session[FirestorePaths.fieldListenerBlocked] == true;
-      if (sessionBlocked) return false;
-
-      return _sessionAllowsCallAccess(
-        session: session,
-        me: me,
-        listener: listener,
-      );
-    }).toList(growable: false);
-
-    if (callReadyListeners.isEmpty) {
-      return _emptyCallReadyCard(
-        'Search profiles, chat, and send a call request first. Accepted listeners will show here.',
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Call-ready people',
-          style: TextStyle(
-            color: AppPalette.textSecondary,
-            fontSize: 15,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        const SizedBox(height: 7),
-        ...callReadyListeners.map((listener) {
-          final session = sessionsByListenerId[listener.uid];
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 7),
-            child: _callReadyTile(
-              me: me,
-              listener: listener,
-              hasCallAccess: session == null
-                  ? false
-                  : _sessionAllowsCallAccess(
-                      session: session,
-                      me: me,
-                      listener: listener,
-                    ),
-            ),
-          );
-        }),
-      ],
-    );
-  }
-
-  bool _sessionAllowsCallAccess({
-    required Map<String, dynamic> session,
-    required AppUserModel me,
-    required AppUserModel listener,
-  }) {
-    final strictAllowed = _callRepository.sessionAllowsCallForDirection(
-      session: session,
-      speakerId: me.uid,
-      listenerId: listener.uid,
-    );
-    if (strictAllowed) return true;
-
-    final status = (session[FirestorePaths.fieldChatStatus] ?? '').toString();
-    if (status != FirestorePaths.chatStatusAccepted) return false;
-
-    final actualListenerId =
-        (session[FirestorePaths.fieldActualListenerId] ?? '').toString().trim();
-    return actualListenerId == listener.uid.trim() &&
-        _callRepository.sessionIdentityLooksComplete(
-          session: session,
-          speakerId: me.uid,
-          listenerId: listener.uid,
-        );
-  }
-
-  Widget _callReadyTile({
-    required AppUserModel me,
-    required AppUserModel listener,
-    required bool hasCallAccess,
-  }) {
-    final calling = _callingFor == listener.uid;
-    final rate = listener.listenerRate > 0 ? listener.listenerRate : 5;
-    final readiness = _callRepository.callReadinessForKnownUsers(
-      me: me,
-      listener: listener,
-      hasCallAccess: hasCallAccess,
-      requiredCredits: rate,
-    );
-    final callReady = readiness.canStart;
-    final followerCount = listener.ratingCount < 0 ? 0 : listener.ratingCount;
-    final statText = '0 posts  -  $followerCount followers';
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: () => _openListenerProfile(listener),
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: AppPalette.card,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: AppPalette.border,
-          ),
-        ),
-        child: Row(
-          children: [
-            _listenerAvatar(listener, size: 44),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _listenerDisplayName(listener),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppPalette.textPrimary,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 15.5,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Wrap(
-                    spacing: 5,
-                    runSpacing: 5,
-                    children: [
-                      _statusPill('Rs $rate/min', AppPalette.blue),
-                      _statusPill(
-                        readiness.label,
-                        callReady
-                            ? AppPalette.online
-                            : readiness.reason.contains('credit')
-                                ? const Color(0xFFF59E0B)
-                                : AppPalette.blue,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    statText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppPalette.textMuted,
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(
-              width: 106,
-              height: 38,
-              child: FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  backgroundColor:
-                      callReady ? AppPalette.blue : AppPalette.feedBg,
-                  disabledBackgroundColor: AppPalette.feedBg,
-                  foregroundColor: Colors.white,
-                  disabledForegroundColor: AppPalette.textMuted,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                onPressed: calling || !callReady
-                    ? null
-                    : () => _startCall(me: me, listener: listener),
-                icon: calling
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.call_rounded, size: 18),
-                label: Text(
-                  calling ? 'Wait' : 'Call',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _statusPill(String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.w900,
-          fontSize: 11.5,
-        ),
-      ),
-    );
-  }
-
-  Widget _emptyCallReadyCard(String text) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppPalette.feedBg,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: AppPalette.border,
-        ),
-      ),
-      child: Column(
-        children: [
-          const Icon(
-            Icons.call_outlined,
-            color: AppPalette.blue,
-            size: 30,
-          ),
-          const SizedBox(height: 10),
-          Text(
-            text,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: AppPalette.textSecondary,
-              fontWeight: FontWeight.w800,
-              height: 1.35,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _callsWarningCard({
+  Widget _walletWarningCard({
     required String title,
     required String message,
     String? actionLabel,
@@ -1805,138 +1088,131 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
       ),
       child: Scaffold(
         backgroundColor: AppPalette.pageBg,
-        body: DecoratedBox(
-          decoration: const BoxDecoration(color: AppPalette.pageBg),
-          child: StreamBuilder<AppUserModel?>(
-            key: ValueKey('wallet_user_$_walletRetryToken'),
-            stream: walletRepository.watchMyWallet(),
-            builder: (_, userSnap) {
-              if (userSnap.hasError) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: _callsWarningCard(
-                      title: 'Wallet unavailable',
-                      message:
-                          'Your account and wallet state could not sync. Check your connection and try again.',
-                      actionLabel: 'Retry',
-                      onAction: _retryWalletLoad,
-                    ),
+        appBar: AppBar(
+          backgroundColor: AppPalette.card,
+          foregroundColor: AppPalette.textPrimary,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          title: const Text('Wallet'),
+        ),
+        body: StreamBuilder<AppUserModel?>(
+          key: ValueKey('wallet_user_$_walletRetryToken'),
+          stream: walletRepository.watchMyWallet(),
+          builder: (_, userSnap) {
+            if (userSnap.hasError) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: _walletWarningCard(
+                    title: 'Wallet unavailable',
+                    message:
+                        'Your account and wallet state could not sync. Check your connection and try again.',
+                    actionLabel: 'Retry',
+                    onAction: _retryWalletLoad,
                   ),
-                );
-              }
-
-              if (userSnap.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              final me = userSnap.data;
-              if (me == null) {
-                return const Center(
-                  child: Text(
-                    'Unable to load calls right now.',
-                    style: TextStyle(color: AppPalette.textPrimary),
-                  ),
-                );
-              }
-
-              return StreamBuilder<List<Map<String, dynamic>>>(
-                key: ValueKey('wallet_ledger_$_ledgerRetryToken'),
-                stream: walletRepository.watchMyTransactions(limit: 60),
-                builder: (_, ledgerSnap) {
-                  final ledgerDocs =
-                      ledgerSnap.data ?? const <Map<String, dynamic>>[];
-
-                  return StreamBuilder<List<AppUserModel>>(
-                    key: ValueKey('wallet_listeners_$_callReadyRetryToken'),
-                    stream: _userRepository.watchAvailableListeners(limit: 200),
-                    builder: (_, listenersSnap) {
-                      final listeners =
-                          listenersSnap.data ?? const <AppUserModel>[];
-
-                      return StreamBuilder<List<Map<String, dynamic>>>(
-                        key: ValueKey('wallet_sessions_$_callReadyRetryToken'),
-                        stream: _callRepository.watchCurrentUserChatSessions(
-                          limit: 100,
-                        ),
-                        builder: (_, sessionsSnap) {
-                          final chatSessions = sessionsSnap.data ??
-                              const <Map<String, dynamic>>[];
-                          final loadingCalls = (listenersSnap.connectionState ==
-                                      ConnectionState.waiting &&
-                                  listeners.isEmpty) ||
-                              (sessionsSnap.connectionState ==
-                                      ConnectionState.waiting &&
-                                  chatSessions.isEmpty);
-                          final ledgerLoadError = ledgerSnap.hasError;
-                          final listenersLoadError = listenersSnap.hasError;
-                          final sessionsLoadError = sessionsSnap.hasError;
-                          final callsLoadError =
-                              listenersLoadError || sessionsLoadError;
-
-                          return ListView(
-                            padding: const EdgeInsets.fromLTRB(14, 18, 14, 104),
-                            children: [
-                              SafeArea(
-                                bottom: false,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    _callsTopBar(),
-                                    const SizedBox(height: 12),
-                                    _callsSearchBar(),
-                                    const SizedBox(height: 12),
-                                    _callsActionTiles(
-                                      me: me,
-                                      walletRepository: walletRepository,
-                                      ledgerDocs: ledgerDocs,
-                                    ),
-                                    if (ledgerLoadError) ...[
-                                      const SizedBox(height: 12),
-                                      _callsWarningCard(
-                                        title: 'Wallet history sync issue',
-                                        message:
-                                            'Balance is shown from your account record, but recent transactions could not refresh.',
-                                        actionLabel: 'Retry history',
-                                        onAction: _retryLedgerLoad,
-                                      ),
-                                    ],
-                                    const SizedBox(height: 14),
-                                    if (callsLoadError)
-                                      _callsWarningCard(
-                                        title: 'Call-ready list unavailable',
-                                        message: listenersLoadError
-                                            ? 'Listener profiles could not load. Your accepted call list may be incomplete.'
-                                            : 'Accepted chat sessions could not load. Try again when the connection settles.',
-                                        actionLabel: 'Retry calls',
-                                        onAction: _retryCallReadyLoad,
-                                      )
-                                    else if (loadingCalls)
-                                      const Center(
-                                        child: Padding(
-                                          padding: EdgeInsets.all(20),
-                                          child: CircularProgressIndicator(),
-                                        ),
-                                      )
-                                    else
-                                      _callReadySection(
-                                        me: me,
-                                        listeners: listeners,
-                                        chatSessions: chatSessions,
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          );
-                        },
-                      );
-                    },
-                  );
-                },
+                ),
               );
-            },
-          ),
+            }
+
+            if (userSnap.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final me = userSnap.data;
+            if (me == null) {
+              return const Center(
+                child: Text(
+                  'Unable to load your wallet right now.',
+                  style: TextStyle(color: AppPalette.textPrimary),
+                ),
+              );
+            }
+            final totalCredits = walletRepository.totalCredits(me);
+
+            return StreamBuilder<List<Map<String, dynamic>>>(
+              key: ValueKey('wallet_ledger_$_ledgerRetryToken'),
+              stream: walletRepository.watchMyTransactions(limit: 60),
+              builder: (_, ledgerSnap) {
+                final ledgerDocs =
+                    ledgerSnap.data ?? const <Map<String, dynamic>>[];
+                final statementDocs = _statementDocsForFilter(
+                  walletRepository,
+                  ledgerDocs,
+                  _statementFilter,
+                );
+
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(14, 16, 14, 28),
+                  children: [
+                    _walletBalanceCard(totalCredits: totalCredits, me: me),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        _walletActionButton(
+                          label: 'Withdraw',
+                          onPressed: !kDebugMode
+                              ? () => _showInfoSheet(
+                                    title: 'Withdrawal',
+                                    body:
+                                        'Withdrawals are available from the debug wallet tools during testing.',
+                                  )
+                              : () => _requestWithdrawalSheet(context, me),
+                          colors: const [
+                            Color(0xFF2F6FED),
+                            Color(0xFF225CFF),
+                          ],
+                        ),
+                        const SizedBox(width: 10),
+                        _walletActionButton(
+                          label: _topupBusy ? 'Processing...' : 'Add money',
+                          onPressed: _topupBusy
+                              ? null
+                              : () => _startTopup(amount: 500, me: me),
+                          colors: const [
+                            Color(0xFF3D7BF0),
+                            Color(0xFF6AA0F7),
+                          ],
+                        ),
+                      ],
+                    ),
+                    if (ledgerSnap.hasError) ...[
+                      const SizedBox(height: 12),
+                      _walletWarningCard(
+                        title: 'Wallet history sync issue',
+                        message:
+                            'Balance is shown from your account record, but recent transactions could not refresh.',
+                        actionLabel: 'Retry history',
+                        onAction: _retryLedgerLoad,
+                      ),
+                    ],
+                    const SizedBox(height: 18),
+                    _walletStatementTabsLocal(
+                      selectedFilter: _statementFilter,
+                      onChanged: (filter) =>
+                          setState(() => _statementFilter = filter),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      _statementTitleForFilter(_statementFilter),
+                      style: const TextStyle(
+                        color: AppPalette.textPrimary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _compactTransactionList(
+                      walletRepository,
+                      statementDocs,
+                      emptyText: _statementEmptyTextForFilter(_statementFilter),
+                      limit: 30,
+                    ),
+                  ],
+                );
+              },
+            );
+          },
         ),
       ),
     );
