@@ -41,7 +41,6 @@ const {
   onChatMessageCreated,
   onChatMessageSeenUpdated,
   cleanupCallRateLimits_v1,
-  cleanupExpiredStories_v1,
 } = require("./src/triggers");
 
 const {
@@ -127,7 +126,6 @@ exports.aggregateReviewToUser_v2 = aggregateReviewToUser_v2;
 exports.onChatMessageCreated = onChatMessageCreated;
 exports.onChatMessageSeenUpdated = onChatMessageSeenUpdated;
 exports.cleanupCallRateLimits_v1 = cleanupCallRateLimits_v1;
-exports.cleanupExpiredStories_v1 = cleanupExpiredStories_v1;
 
 exports.requestAccountDeletion_v1 = requestAccountDeletion_v1;
 exports.adminReviewAccountDeletionRequest_v1 =
