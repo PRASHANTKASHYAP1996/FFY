@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -13,9 +14,11 @@ import '../../shared/relative_time.dart';
 import '../../shared/models/app_user_model.dart';
 import '../../shared/models/social_post_model.dart';
 import '../admin_dashboard_screen.dart';
+import '../analytics_dashboard_screen.dart';
 import '../call_history_screen.dart';
 import '../caller_waiting_screen.dart';
 import '../chat_conversation_screen.dart';
+import '../developer_diagnostics_screen.dart';
 import '../earnings_screen.dart';
 import '../help_support_screen.dart';
 import '../listener_profile_screen.dart';
@@ -1131,10 +1134,21 @@ class _MePageState extends State<_MePage> {
                 future: _isAdmin,
                 builder: (context, snap) {
                   if (snap.data != true) return const SizedBox.shrink();
-                  return _menuRow(Icons.shield_outlined, 'Admin dashboard',
-                      () => _open(const AdminDashboardScreen()));
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _menuRow(Icons.shield_outlined, 'Admin dashboard',
+                          () => _open(const AdminDashboardScreen())),
+                      _menuRow(Icons.insights_outlined, 'Analytics',
+                          () => _open(const AnalyticsDashboardScreen())),
+                    ],
+                  );
                 },
               ),
+              // Debug builds only: developer diagnostics.
+              if (kDebugMode)
+                _menuRow(Icons.bug_report_outlined, 'Developer diagnostics',
+                    () => _open(const DeveloperDiagnosticsScreen())),
               _menuRow(Icons.logout_rounded, 'Log out', _logout, danger: true),
             ],
           );
