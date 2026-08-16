@@ -22,6 +22,7 @@ import '../shared/listener_availability.dart';
 import '../shared/models/app_user_model.dart';
 import '../shared/user_safety_actions.dart';
 import 'caller_waiting_screen.dart';
+import 'redesign/call_setup_screen.dart';
 import 'crisis_help_screen.dart';
 
 const String _chatBootstrapMismatchMessage =
@@ -2364,6 +2365,32 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
     }
   }
 
+  /// The chat Call action opens this person's call-setup step (matching the
+  /// prototype): pick a duration, see the estimated max cost, then Start. The
+  /// setup screen runs the same createCallToListener flow. Falls back to the
+  /// direct start only if the users aren't resolved yet.
+  void _openCallSetup(
+    Map<String, dynamic> session, {
+    String otherName = 'The other person',
+    AppUserModel? me,
+    AppUserModel? otherUser,
+  }) {
+    if (me == null || otherUser == null) {
+      _startCall(session, otherName: otherName, me: me, otherUser: otherUser);
+      return;
+    }
+    if (_hasBlockingCallState) {
+      _showSnack('Finish your current call flow first.');
+      return;
+    }
+    _dismissComposerFocus(reason: 'focus.cleared_for_call_surface');
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CallSetupScreen(listener: otherUser, me: me),
+      ),
+    );
+  }
+
   Future<void> _startCall(
     Map<String, dynamic> session, {
     String otherName = 'The other person',
@@ -3449,7 +3476,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                   width: stackVertically ? double.infinity : null,
                   child: ElevatedButton(
                     onPressed: startEnabled
-                        ? () => _startCall(
+                        ? () => _openCallSetup(
                               session,
                               otherName: otherName,
                               me: me,
