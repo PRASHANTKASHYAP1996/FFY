@@ -1,9 +1,7 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/theme/app_palette.dart';
-import '../../repositories/admin_repository.dart';
 import '../../repositories/call_repository.dart';
 import '../../repositories/history_repository.dart';
 import '../../repositories/social_repository.dart';
@@ -15,20 +13,13 @@ import '../../shared/people_match.dart';
 import '../../shared/relative_time.dart';
 import '../../shared/models/app_user_model.dart';
 import '../../shared/models/social_post_model.dart';
-import '../admin_dashboard_screen.dart';
-import '../analytics_dashboard_screen.dart';
-import '../call_history_screen.dart';
 import '../chat_conversation_screen.dart';
-import '../developer_diagnostics_screen.dart';
-import '../earnings_screen.dart';
-import '../help_support_screen.dart';
 import '../listener_profile_screen.dart';
 import '../notifications_center_screen.dart';
 import '../post_detail_screen.dart';
 import '../profile_screen.dart';
-import '../wallet_details_screen.dart';
-import 'blocked_users_screen.dart';
 import 'call_setup_screen.dart';
+import 'settings_screen.dart';
 
 /// The app's main shell: a 5-tab IndexedStack (Discover, Chats, Call center,
 /// Feed, Me) on the light-blue theme. Reached via MainShellScreen once the
@@ -1092,16 +1083,12 @@ class _MePage extends StatefulWidget {
 
 class _MePageState extends State<_MePage> {
   final Stream<AppUserModel?> _me = UserRepository.instance.watchMe();
-  // Resolved once: a server round-trip (adminGetDashboard_v1) that only the
-  // real admin passes, so the row below is truly admin-gated, not cosmetic.
-  final Future<bool> _isAdmin = AdminRepository.instance.isCurrentUserAdmin();
+  final String _myUid = UserRepository.instance.myUidOrNull ?? '';
+  late final Stream<List<SocialPostModel>> _myPosts =
+      SocialRepository.instance.watchUserPosts(_myUid);
 
   void _open(Widget screen) {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
-  }
-
-  Future<void> _logout() async {
-    await UserRepository.instance.signOut();
   }
 
   @override
@@ -1113,32 +1100,63 @@ class _MePageState extends State<_MePage> {
         builder: (context, snapshot) {
           final me = snapshot.data;
           final name = me?.safeDisplayName ?? '...';
+          final followers = me?.followersCount ?? 0;
+          final following = me?.following.length ?? 0;
           return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
             children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'You',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: AppPalette.textPrimary,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Settings',
+                    onPressed: () => _open(const SettingsScreen()),
+                    icon: const Icon(Icons.settings_outlined,
+                        color: AppPalette.textSecondary, size: 24),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
               Row(
                 children: [
                   _Avatar(
                     initials: _initialsFromName(name),
                     photoUrl: me?.photoURL,
-                    size: 56,
+                    size: 64,
                   ),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                            color: AppPalette.textPrimary,
-                          ),
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppPalette.textPrimary,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            _LevelBadge(followers),
+                          ],
                         ),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 3),
                         Text(
                           me?.isListener == true ? 'Listener' : 'Member',
                           style: const TextStyle(
@@ -1151,70 +1169,36 @@ class _MePageState extends State<_MePage> {
                   ),
                 ],
               ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: AppPalette.cardDecoration(radius: 16),
+                child: Row(
+                  children: [
+                    _stat('Followers', _compactCount(followers)),
+                    _statDivider(),
+                    _stat('Following', _compactCount(following)),
+                    _statDivider(),
+                    _stat('Level',
+                        '${LevelUtils.levelForFollowers(followers)}'),
+                  ],
+                ),
+              ),
               if (me != null && me.isListener) ...[
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
                 _AvailabilityCard(available: me.isAvailable),
               ],
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Expanded(
-                    child: _moneyCard(
-                      label: 'Wallet',
-                      value: '₹${me?.credits ?? 0}',
-                      action: 'Add money',
-                      onTap: () => _open(const WalletDetailsScreen()),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _moneyCard(
-                      label: 'Earnings',
-                      value: '₹${me?.earningsCredits ?? 0}',
-                      action: 'Withdraw',
-                      onTap: () => _open(const WalletDetailsScreen()),
-                    ),
-                  ),
-                ],
+              const SizedBox(height: 22),
+              const Text(
+                'My posts',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: AppPalette.textPrimary,
+                ),
               ),
-              const SizedBox(height: 20),
-              _menuRow(Icons.person_outline_rounded, 'Edit profile',
-                  () => _open(const ProfileScreen())),
-              _menuRow(Icons.notifications_none_rounded, 'Notifications',
-                  () => _open(const NotificationsCenterScreen())),
-              _menuRow(
-                  Icons.account_balance_wallet_outlined,
-                  'Wallet and transactions',
-                  () => _open(const WalletDetailsScreen())),
-              _menuRow(Icons.payments_outlined, 'Earnings and safety',
-                  () => _open(const EarningsScreen())),
-              _menuRow(Icons.access_time_rounded, 'Call history',
-                  () => _open(const CallHistoryScreen())),
-              _menuRow(Icons.block_rounded, 'Blocked users',
-                  () => _open(const BlockedUsersScreen())),
-              _menuRow(Icons.help_outline_rounded, 'Help and support',
-                  () => _open(const HelpSupportScreen())),
-              // Admins only: shown once the server confirms admin access.
-              FutureBuilder<bool>(
-                future: _isAdmin,
-                builder: (context, snap) {
-                  if (snap.data != true) return const SizedBox.shrink();
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _menuRow(Icons.shield_outlined, 'Admin dashboard',
-                          () => _open(const AdminDashboardScreen())),
-                      _menuRow(Icons.insights_outlined, 'Analytics',
-                          () => _open(const AnalyticsDashboardScreen())),
-                    ],
-                  );
-                },
-              ),
-              // Debug builds only: developer diagnostics.
-              if (kDebugMode)
-                _menuRow(Icons.bug_report_outlined, 'Developer diagnostics',
-                    () => _open(const DeveloperDiagnosticsScreen())),
-              _menuRow(Icons.logout_rounded, 'Log out', _logout, danger: true),
+              const SizedBox(height: 12),
+              _myPostsGrid(),
             ],
           );
         },
@@ -1222,55 +1206,24 @@ class _MePageState extends State<_MePage> {
     );
   }
 
-  Widget _moneyCard({
-    required String label,
-    required String value,
-    required String action,
-    required VoidCallback onTap,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: AppPalette.cardDecoration(),
+  Widget _stat(String label, String value) {
+    return Expanded(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            label,
-            style: const TextStyle(
-              fontSize: 12.5,
-              color: AppPalette.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 3),
-          Text(
             value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
               color: AppPalette.textPrimary,
             ),
           ),
-          const SizedBox(height: 10),
-          GestureDetector(
-            onTap: onTap,
-            child: Container(
-              width: double.infinity,
-              alignment: Alignment.center,
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              decoration: BoxDecoration(
-                color: AppPalette.blue,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                action,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                ),
-              ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppPalette.textSecondary,
             ),
           ),
         ],
@@ -1278,46 +1231,78 @@ class _MePageState extends State<_MePage> {
     );
   }
 
-  Widget _menuRow(IconData icon, String label, VoidCallback onTap,
-      {bool danger = false}) {
-    const dangerColor = Color(0xFFDC2626);
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 2),
-        decoration: const BoxDecoration(
-          border: Border(
-            bottom: BorderSide(color: AppPalette.divider, width: 0.5),
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(icon,
-                size: 20,
-                color: danger ? dangerColor : AppPalette.textSecondary),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: danger ? dangerColor : AppPalette.textPrimary,
-                ),
+  Widget _statDivider() {
+    return Container(
+      width: 0.5,
+      height: 30,
+      color: AppPalette.divider,
+    );
+  }
+
+  Widget _myPostsGrid() {
+    return StreamBuilder<List<SocialPostModel>>(
+      stream: _myPosts,
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(20),
+              child: SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                    color: AppPalette.blue, strokeWidth: 2.5),
               ),
             ),
-            if (!danger)
-              const Icon(Icons.chevron_right_rounded,
-                  size: 18, color: AppPalette.textMuted),
-          ],
-        ),
-      ),
+          );
+        }
+        final posts = snap.data ?? const <SocialPostModel>[];
+        if (posts.isEmpty) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(22),
+            decoration: AppPalette.cardDecoration(radius: 16),
+            child: const Text(
+              "You haven't posted yet.\n"
+              'Share something from Home to see it here.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.4,
+                color: AppPalette.textSecondary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          );
+        }
+        return GridView.count(
+          crossAxisCount: 3,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 4,
+          crossAxisSpacing: 4,
+          children: posts
+              .map((p) => GestureDetector(
+                    onTap: () => _open(PostDetailScreen(initialPost: p)),
+                    child: Container(
+                      color: AppPalette.feedBg,
+                      child: Image.network(
+                        p.imageURL,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.image_not_supported_outlined,
+                          color: AppPalette.textMuted,
+                        ),
+                      ),
+                    ),
+                  ))
+              .toList(),
+        );
+      },
     );
   }
 }
 
-// ---------------------------------------------------------------------------
-// Chats (conversations + call requests)
 // ---------------------------------------------------------------------------
 
 class _ChatsPage extends StatefulWidget {
