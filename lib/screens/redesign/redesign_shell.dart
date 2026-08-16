@@ -10,6 +10,7 @@ import '../../repositories/user_repository.dart';
 import '../../shared/call_ready_resolver.dart';
 import '../../shared/chat_unread.dart';
 import '../../shared/discover_ranking.dart';
+import '../../shared/level_utils.dart';
 import '../../shared/relative_time.dart';
 import '../../shared/models/app_user_model.dart';
 import '../../shared/models/social_post_model.dart';
@@ -45,11 +46,13 @@ class _RedesignShellState extends State<RedesignShell> {
   // Built each frame so _FeedPage can carry a tab-switch callback. IndexedStack
   // keeps each child's State alive (same runtime type per slot), so rebuilding
   // the list does not reset any tab.
+  // New nav direction: Home · Explore · Talk · Chats · You.
+  // (Home = the social feed, Explore = people discovery, Talk = the call hub.)
   List<Widget> get _pages => <Widget>[
+        _FeedPage(onGoToExplore: () => setState(() => _index = 1)),
         const _DiscoverPage(),
-        const _ChatsPage(),
         const _CallPage(),
-        _FeedPage(onGoToDiscover: () => setState(() => _index = 0)),
+        const _ChatsPage(),
         const _MePage(),
       ];
 
@@ -108,12 +111,12 @@ class _BottomNav extends StatelessWidget {
           height: 62,
           child: Row(
             children: [
-              _navItem(0, Icons.explore_outlined, 'Discover'),
-              _navItem(1, Icons.chat_bubble_outline_rounded, 'Chats',
+              _navItem(0, Icons.home_outlined, 'Home'),
+              _navItem(1, Icons.explore_outlined, 'Explore'),
+              _navItem(2, Icons.call_outlined, 'Talk'),
+              _navItem(3, Icons.chat_bubble_outline_rounded, 'Chats',
                   badge: chatsUnread),
-              _callButton(),
-              _navItem(3, Icons.auto_awesome_outlined, 'Feed'),
-              _navItem(4, Icons.person_outline_rounded, 'Me'),
+              _navItem(4, Icons.person_outline_rounded, 'You'),
             ],
           ),
         ),
@@ -174,26 +177,6 @@ class _BottomNav extends StatelessWidget {
     );
   }
 
-  Widget _callButton() {
-    return Expanded(
-      child: Center(
-        child: InkWell(
-          borderRadius: BorderRadius.circular(26),
-          onTap: () => onTap(2),
-          child: Container(
-            width: 50,
-            height: 50,
-            decoration: const BoxDecoration(
-              color: AppPalette.blue,
-              shape: BoxShape.circle,
-            ),
-            child:
-                const Icon(Icons.phone_rounded, color: Colors.white, size: 24),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1922,10 +1905,10 @@ class _CallPageState extends State<_CallPage> {
 // ---------------------------------------------------------------------------
 
 class _FeedPage extends StatefulWidget {
-  const _FeedPage({required this.onGoToDiscover});
+  const _FeedPage({required this.onGoToExplore});
 
-  /// Jumps the shell to the Discover tab (used by the empty-state CTA).
-  final VoidCallback onGoToDiscover;
+  /// Jumps the shell to the Explore tab (empty-state CTA + "find people").
+  final VoidCallback onGoToExplore;
 
   @override
   State<_FeedPage> createState() => _FeedPageState();
@@ -1936,11 +1919,27 @@ class _FeedPageState extends State<_FeedPage> {
   final Stream<List<SocialPostModel>> _posts =
       SocialRepository.instance.watchFeedPosts();
 
+  // Future-cache: one shared fetch per uid, used for post-owner levels and the
+  // story circles. Stable identity stops FutureBuilders re-firing on rebuild.
+  final Map<String, Future<AppUserModel?>> _userFutures =
+      <String, Future<AppUserModel?>>{};
+  Future<AppUserModel?> _resolveUser(String uid) => _userFutures.putIfAbsent(
+        uid,
+        () => UserRepository.instance.getUser(uid),
+      );
+
   void _openComposer() {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => const ProfileScreen(openComposer: true),
       ),
+    );
+  }
+
+  void _openProfile(String uid) {
+    if (uid.trim().isEmpty) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => ListenerProfileScreen(listenerId: uid)),
     );
   }
 
@@ -1963,7 +1962,7 @@ class _FeedPageState extends State<_FeedPage> {
             ),
             const SizedBox(height: 16),
             const Text(
-              'Your feed is quiet 🌙',
+              'Your Home is quiet 🌙',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 17,
@@ -1973,8 +1972,8 @@ class _FeedPageState extends State<_FeedPage> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Follow people from Discover to see what they share — '
-              'and reach them with a tap.',
+              'Posts from people you follow show up here.\n'
+              'Find people to follow in Explore.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
@@ -1984,7 +1983,7 @@ class _FeedPageState extends State<_FeedPage> {
             ),
             const SizedBox(height: 20),
             FilledButton.icon(
-              onPressed: widget.onGoToDiscover,
+              onPressed: widget.onGoToExplore,
               style: FilledButton.styleFrom(
                 backgroundColor: AppPalette.blue,
                 foregroundColor: Colors.white,
@@ -1996,7 +1995,7 @@ class _FeedPageState extends State<_FeedPage> {
               ),
               icon: const Icon(Icons.explore_rounded, size: 18),
               label: const Text(
-                'Find people to follow',
+                'Go to Explore',
                 style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
               ),
             ),
@@ -2014,11 +2013,8 @@ class _FeedPageState extends State<_FeedPage> {
         stream: _me,
         builder: (context, meSnap) {
           final me = meSnap.data;
-          // While the profile is still loading we don't know who is followed,
-          // so keep showing the spinner instead of a false "quiet feed".
           final meLoading =
               me == null && meSnap.connectionState == ConnectionState.waiting;
-          final myUid = me?.uid ?? '';
           final following = me?.following ?? const <String>[];
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2043,23 +2039,31 @@ class _FeedPageState extends State<_FeedPage> {
                       );
                     }
                     final all = snap.data ?? const <SocialPostModel>[];
+                    // Only posts from people I follow (my own show under You).
                     final visible = all
-                        .where((p) =>
-                            p.ownerId == myUid || following.contains(p.ownerId))
+                        .where((p) => following.contains(p.ownerId))
                         .toList(growable: false);
+                    final stories =
+                        me == null ? const SizedBox.shrink() : _storyCircles(me);
                     if (visible.isEmpty) {
-                      return _emptyFeed();
+                      return Column(
+                        children: [stories, Expanded(child: _emptyFeed())],
+                      );
                     }
                     return ListView.builder(
-                      padding: const EdgeInsets.only(top: 10, bottom: 24),
-                      itemCount: visible.length,
-                      // Keyed by postId so card state (like override, liked
-                      // stream) never carries over to a different post when
-                      // the list shifts.
-                      itemBuilder: (context, i) => _FeedPostCard(
-                        key: ValueKey(visible[i].postId),
-                        post: visible[i],
-                      ),
+                      padding: const EdgeInsets.only(bottom: 24),
+                      itemCount: visible.length + 1,
+                      itemBuilder: (context, i) {
+                        if (i == 0) return stories;
+                        final post = visible[i - 1];
+                        // Keyed by postId so card state never carries across
+                        // posts when the list shifts.
+                        return _FeedPostCard(
+                          key: ValueKey(post.postId),
+                          post: post,
+                          resolveOwner: _resolveUser,
+                        );
+                      },
                     );
                   },
                 ),
@@ -2083,7 +2087,7 @@ class _FeedPageState extends State<_FeedPage> {
             children: [
               const Expanded(
                 child: Text(
-                  'Feed',
+                  'Home',
                   style: TextStyle(
                     fontSize: 19,
                     fontWeight: FontWeight.w700,
@@ -2134,11 +2138,181 @@ class _FeedPageState extends State<_FeedPage> {
       ),
     );
   }
+
+  /// Story circles: me first (tap → composer), then everyone I follow
+  /// (tap → their profile). Ephemeral stories were dropped from the product,
+  /// so these are follow shortcuts rendered in the familiar row.
+  Widget _storyCircles(AppUserModel me) {
+    final following =
+        me.following.where((u) => u.trim().isNotEmpty).toList(growable: false);
+    return Container(
+      color: AppPalette.card,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: SizedBox(
+        height: 86,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          children: [
+            _storyBubble(
+              name: 'You',
+              photoUrl: me.photoURL,
+              initials: _initialsFromName(me.safeDisplayName),
+              onTap: _openComposer,
+              isSelf: true,
+            ),
+            for (final uid in following)
+              FutureBuilder<AppUserModel?>(
+                future: _resolveUser(uid),
+                builder: (context, snap) {
+                  final u = snap.data;
+                  final nm = u?.safeDisplayName ?? '…';
+                  return _storyBubble(
+                    name: nm,
+                    photoUrl: u?.photoURL,
+                    initials: _initialsFromName(nm),
+                    onTap: () => _openProfile(uid),
+                    online: u?.isAvailable == true && u?.isOnCall == false,
+                  );
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _storyBubble({
+    required String name,
+    required String initials,
+    required VoidCallback onTap,
+    String? photoUrl,
+    bool isSelf = false,
+    bool online = false,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.only(right: 14),
+        child: SizedBox(
+          width: 60,
+          child: Column(
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(2.5),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isSelf ? AppPalette.blueTint : null,
+                      gradient: isSelf
+                          ? null
+                          : const LinearGradient(
+                              colors: [AppPalette.blue, AppPalette.rose],
+                            ),
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppPalette.card,
+                      ),
+                      child: _Avatar(
+                        initials: initials,
+                        photoUrl: photoUrl,
+                        size: 48,
+                      ),
+                    ),
+                  ),
+                  if (isSelf)
+                    Positioned(
+                      right: -1,
+                      bottom: -1,
+                      child: Container(
+                        width: 20,
+                        height: 20,
+                        decoration: BoxDecoration(
+                          color: AppPalette.blue,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: AppPalette.card, width: 2),
+                        ),
+                        child: const Icon(Icons.add_rounded,
+                            size: 13, color: Colors.white),
+                      ),
+                    ),
+                  if (online && !isSelf)
+                    Positioned(
+                      right: 2,
+                      bottom: 2,
+                      child: Container(
+                        width: 13,
+                        height: 13,
+                        decoration: BoxDecoration(
+                          color: AppPalette.online,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: AppPalette.card, width: 2),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 5),
+              Text(
+                isSelf ? 'You' : name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  color: AppPalette.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Small "Lv N" pill derived from a follower count. Reused across Home posts,
+/// Explore people, and the You profile.
+class _LevelBadge extends StatelessWidget {
+  const _LevelBadge(this.followers);
+  final int followers;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppPalette.blueTint,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        'Lv ${LevelUtils.levelForFollowers(followers)}',
+        style: const TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w700,
+          color: AppPalette.blue,
+        ),
+      ),
+    );
+  }
 }
 
 class _FeedPostCard extends StatefulWidget {
-  const _FeedPostCard({super.key, required this.post});
+  const _FeedPostCard({
+    super.key,
+    required this.post,
+    required this.resolveOwner,
+  });
   final SocialPostModel post;
+
+  /// Resolves the post owner (cached) so the card can show their level.
+  final Future<AppUserModel?> Function(String uid) resolveOwner;
 
   @override
   State<_FeedPostCard> createState() => _FeedPostCardState();
@@ -2263,17 +2437,31 @@ class _FeedPostCardState extends State<_FeedPostCard> {
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(
-                _post.ownerName.isEmpty ? 'Someone' : _post.ownerName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: AppPalette.textPrimary,
-                ),
+              child: Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      _post.ownerName.isEmpty ? 'Someone' : _post.ownerName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: AppPalette.textPrimary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  // The person's level, beside their name.
+                  FutureBuilder<AppUserModel?>(
+                    future: widget.resolveOwner(_post.ownerId),
+                    builder: (context, snap) =>
+                        _LevelBadge(snap.data?.followersCount ?? 0),
+                  ),
+                ],
               ),
             ),
+            const SizedBox(width: 6),
             Text(
               RelativeTime.format(_post.createdAtMs),
               style: const TextStyle(fontSize: 12, color: AppPalette.textMuted),
@@ -2284,113 +2472,60 @@ class _FeedPostCardState extends State<_FeedPostCard> {
     );
   }
 
+  // Per the new Home spec: only a Like button + count — no comment or share.
   Widget _actions() {
-    var firstName = _post.ownerName.trim().split(RegExp(r'\s+')).first;
-    if (firstName.length > 12) firstName = '${firstName.substring(0, 12)}…';
-    final talkLabel = firstName.isEmpty ? 'Talk' : 'Talk to $firstName';
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 6, 12, 10),
-      child: Row(
-        children: [
-          StreamBuilder<bool>(
-            stream: _likedStream,
-            builder: (context, snap) {
-              final serverLiked = snap.data ?? false;
-              // Once the server confirms the optimistic value, drop the
-              // override so later changes (e.g. from another device) show.
-              if (!_busy && snap.hasData && _likedOverride == serverLiked) {
-                _likedOverride = null;
-              }
-              final liked = _likedOverride ?? serverLiked;
-              return MergeSemantics(
-                child: Semantics(
-                  button: true,
-                  label: liked ? 'Unlike' : 'Like',
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(999),
-                    onTap: () => _toggleLike(liked),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 6),
-                      child: Row(
-                        children: [
-                          Icon(
-                            liked
-                                ? Icons.favorite_rounded
-                                : Icons.favorite_border_rounded,
-                            size: 22,
-                            color: liked
-                                ? AppPalette.rose
-                                : AppPalette.textSecondary,
-                          ),
-                          if (_post.likeCount > 0) ...[
-                            const SizedBox(width: 5),
-                            Text(
-                              '${_post.likeCount}',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: AppPalette.textSecondary,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-          MergeSemantics(
-            child: Semantics(
-              button: true,
-              label: 'Comments',
-              child: InkWell(
-                borderRadius: BorderRadius.circular(999),
-                onTap: _openDetail,
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.chat_bubble_outline_rounded,
-                          size: 20, color: AppPalette.textSecondary),
-                      if (_post.commentCount > 0) ...[
-                        const SizedBox(width: 5),
+      padding: const EdgeInsets.fromLTRB(8, 4, 12, 10),
+      child: StreamBuilder<bool>(
+        stream: _likedStream,
+        builder: (context, snap) {
+          final serverLiked = snap.data ?? false;
+          // Once the server confirms the optimistic value, drop the override
+          // so later changes (e.g. from another device) show.
+          if (!_busy && snap.hasData && _likedOverride == serverLiked) {
+            _likedOverride = null;
+          }
+          final liked = _likedOverride ?? serverLiked;
+          return Align(
+            alignment: Alignment.centerLeft,
+            child: MergeSemantics(
+              child: Semantics(
+                button: true,
+                label: liked ? 'Unlike' : 'Like',
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(999),
+                  onTap: () => _toggleLike(liked),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          liked
+                              ? Icons.favorite_rounded
+                              : Icons.favorite_border_rounded,
+                          size: 22,
+                          color:
+                              liked ? AppPalette.rose : AppPalette.textSecondary,
+                        ),
+                        const SizedBox(width: 6),
                         Text(
-                          '${_post.commentCount}',
+                          '${_post.likeCount}',
                           style: const TextStyle(
-                            fontSize: 13,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
                             color: AppPalette.textSecondary,
                           ),
                         ),
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          const Spacer(),
-          FilledButton.icon(
-            onPressed: _openOwner,
-            style: FilledButton.styleFrom(
-              backgroundColor: AppPalette.blue,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-              minimumSize: const Size(0, 0),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            icon: const Icon(Icons.phone_rounded, size: 16),
-            label: Text(
-              talkLabel,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
