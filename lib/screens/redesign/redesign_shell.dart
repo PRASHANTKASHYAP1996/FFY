@@ -197,6 +197,18 @@ String _compactCount(int n) {
   return '$n';
 }
 
+/// Explore filter chips, matching the prototype (For you / Mutuals / Hindi /
+/// Rising).
+enum _ExploreFilter { forYou, mutuals, hindi, rising }
+
+const Map<_ExploreFilter, String> _exploreFilterLabels =
+    <_ExploreFilter, String>{
+  _ExploreFilter.forYou: 'For you',
+  _ExploreFilter.mutuals: 'Mutuals',
+  _ExploreFilter.hindi: 'Hindi',
+  _ExploreFilter.rising: 'Rising',
+};
+
 class _DiscoverPage extends StatefulWidget {
   const _DiscoverPage();
 
@@ -205,38 +217,65 @@ class _DiscoverPage extends StatefulWidget {
 }
 
 class _DiscoverPageState extends State<_DiscoverPage> {
-  String _mood = '';
-
   final Stream<List<AppUserModel>> _stream =
       UserRepository.instance.watchAvailableListeners();
   final Stream<AppUserModel?> _me = UserRepository.instance.watchMe();
 
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
-  String _languageFilter = '';
-  bool _sortLowToHigh = false;
-
-  static const List<String> _filterLanguages = <String>[
-    'English',
-    'Hindi',
-    'Tamil',
-    'Telugu',
-    'Bengali',
-    'Marathi',
-    'Punjabi',
-    'Kannada',
-  ];
+  _ExploreFilter _exFilter = _ExploreFilter.forYou;
 
   bool get _filtersActive =>
-      _query.trim().isNotEmpty || _languageFilter.isNotEmpty || _sortLowToHigh;
+      _query.trim().isNotEmpty || _exFilter != _ExploreFilter.forYou;
 
   void _clearFilters() {
     _searchController.clear();
     setState(() {
       _query = '';
-      _languageFilter = '';
-      _sortLowToHigh = false;
+      _exFilter = _ExploreFilter.forYou;
     });
+  }
+
+  int _matchWith(AppUserModel me, AppUserModel u) => PeopleMatch.percent(
+        myTopics: me.topics,
+        myLanguages: me.languages,
+        theirTopics: u.topics,
+        theirLanguages: u.languages,
+      );
+
+  /// Applies the active Explore chip to the (already search-filtered) [base].
+  /// Filters that need the follow graph or match use [me].
+  /// - For you: everyone, best match first.
+  /// - Mutuals: people I already follow (real follow data; the "who follows me"
+  ///   side isn't in the public projection — reported as a limitation).
+  /// - Hindi: Hindi speakers.
+  /// - Rising: rising-level people (level 1–2).
+  List<AppUserModel> _applyExploreFilter(
+      List<AppUserModel> base, AppUserModel? me) {
+    final myUid = me?.uid ?? '';
+    final following = me?.following.toSet() ?? const <String>{};
+    final people = base.where((u) => u.uid != myUid);
+    switch (_exFilter) {
+      case _ExploreFilter.forYou:
+        final list = people.toList();
+        if (me != null) {
+          list.sort((a, b) => _matchWith(me, b).compareTo(_matchWith(me, a)));
+        }
+        return list;
+      case _ExploreFilter.mutuals:
+        return people
+            .where((u) => following.contains(u.uid))
+            .toList(growable: false);
+      case _ExploreFilter.hindi:
+        return people
+            .where((u) =>
+                u.languages.any((l) => l.trim().toLowerCase() == 'hindi'))
+            .toList(growable: false);
+      case _ExploreFilter.rising:
+        return people
+            .where((u) => LevelUtils.levelForFollowers(u.followersCount) <= 2)
+            .toList(growable: false);
+    }
   }
 
   @override
@@ -300,47 +339,6 @@ class _DiscoverPageState extends State<_DiscoverPage> {
         builder: (_) => ListenerProfileScreen(
           listenerId: user.uid,
           initialUser: user,
-        ),
-      ),
-    );
-  }
-
-  Widget _filterChip({
-    required String label,
-    required bool selected,
-    required VoidCallback onTap,
-    IconData? icon,
-  }) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(999),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        decoration: BoxDecoration(
-          color: selected ? AppPalette.blue : AppPalette.feedBg,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: selected ? AppPalette.blue : AppPalette.border,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (icon != null) ...[
-              Icon(icon,
-                  size: 14,
-                  color: selected ? Colors.white : AppPalette.textSecondary),
-              const SizedBox(width: 4),
-            ],
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-                color: selected ? Colors.white : AppPalette.textSecondary,
-              ),
-            ),
-          ],
         ),
       ),
     );
@@ -491,33 +489,7 @@ class _DiscoverPageState extends State<_DiscoverPage> {
                     'Check back in a little while.',
                   );
                 }
-                final filtered = DiscoverRanking.applyFilters(
-                  all,
-                  query: _query,
-                  language: _languageFilter,
-                );
-                // Mood re-orders the filtered set (best matches first) but
-                // never hides anyone within it.
-                final result = DiscoverRanking.orderByMood(filtered, _mood);
-                var listeners = result.ordered;
-                if (_sortLowToHigh) {
-                  listeners = DiscoverRanking.sortByPriceAscending(listeners);
-                }
-                final String statusText;
-                if (_filtersActive) {
-                  final n = filtered.length;
-                  statusText = n == 0
-                      ? 'No matches'
-                      : '$n ${n == 1 ? 'match' : 'matches'}';
-                } else if (!DiscoverRanking.moodActive(_mood)) {
-                  statusText = '${all.length} here for you now';
-                } else if (result.matchCount == 0) {
-                  statusText = "No one's tagged for \"$_mood\" yet — "
-                      'here are all ${all.length} available';
-                } else {
-                  statusText = '${result.matchCount} great for "$_mood" · '
-                      '${all.length} here now';
-                }
+                final base = DiscoverRanking.applyFilters(all, query: _query);
                 return StreamBuilder<AppUserModel?>(
                   stream: _me,
                   builder: (context, meSnap) {
@@ -531,6 +503,16 @@ class _DiscoverPageState extends State<_DiscoverPage> {
                         : all
                             .where((u) => favUids.contains(u.uid))
                             .toList(growable: false);
+                    final listeners = _applyExploreFilter(base, me);
+                    final String statusText;
+                    if (_filtersActive) {
+                      final n = listeners.length;
+                      statusText = n == 0
+                          ? 'No matches'
+                          : '$n ${n == 1 ? 'person' : 'people'}';
+                    } else {
+                      statusText = '${listeners.length} suggested for you';
+                    }
                     return SingleChildScrollView(
                       padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
                       child: Column(
@@ -684,62 +666,34 @@ class _DiscoverPageState extends State<_DiscoverPage> {
           ),
           const SizedBox(height: 12),
           Wrap(
-            spacing: 7,
-            children: List.generate(DiscoverRanking.moods.length, (i) {
-              final mood = DiscoverRanking.moods[i];
-              final selected = _mood == mood;
+            spacing: 8,
+            runSpacing: 8,
+            children: _ExploreFilter.values.map((f) {
+              final selected = _exFilter == f;
               return InkWell(
                 borderRadius: BorderRadius.circular(999),
-                onTap: () => setState(() => _mood = selected ? '' : mood),
+                onTap: () => setState(() => _exFilter = f),
                 child: Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
-                    color: selected ? AppPalette.blue : AppPalette.blueTint,
+                    color: selected ? AppPalette.blue : AppPalette.feedBg,
                     borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: selected ? AppPalette.blue : AppPalette.border,
+                    ),
                   ),
                   child: Text(
-                    mood,
+                    _exploreFilterLabels[f]!,
                     style: TextStyle(
                       fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: selected ? Colors.white : AppPalette.blue,
+                      fontWeight: FontWeight.w600,
+                      color: selected ? Colors.white : AppPalette.textSecondary,
                     ),
                   ),
                 ),
               );
-            }),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 36,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: EdgeInsets.zero,
-              children: [
-                _filterChip(
-                  label: 'Low price',
-                  icon: Icons.sort_rounded,
-                  selected: _sortLowToHigh,
-                  onTap: () => setState(() => _sortLowToHigh = !_sortLowToHigh),
-                ),
-                const SizedBox(width: 7),
-                for (final lang in _filterLanguages) ...[
-                  _filterChip(
-                    label: lang,
-                    selected:
-                        _languageFilter.toLowerCase() == lang.toLowerCase(),
-                    onTap: () => setState(() {
-                      _languageFilter =
-                          _languageFilter.toLowerCase() == lang.toLowerCase()
-                              ? ''
-                              : lang;
-                    }),
-                  ),
-                  const SizedBox(width: 7),
-                ],
-              ],
-            ),
+            }).toList(),
           ),
         ],
       ),
@@ -1000,7 +954,7 @@ class _MePageState extends State<_MePage> {
                   ),
                   IconButton(
                     tooltip: 'Settings',
-                    onPressed: () => _open(const SettingsScreen()),
+                    onPressed: () => showSettingsSheet(context),
                     icon: const Icon(Icons.settings_outlined,
                         color: AppPalette.textSecondary, size: 24),
                   ),
