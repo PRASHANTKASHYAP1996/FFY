@@ -21,7 +21,7 @@ val localProperties = Properties().apply {
 // This Gradle property controls the Android namespace/applicationId.
 // A Dart define with the same name does not change the Android package.
 val appId = providers.gradleProperty("FRIENDIFY_APP_ID")
-    .orElse(localProperties.getProperty("friendify.appId") ?: "com.friendify.app")
+    .orElse(localProperties.getProperty("friendify.appId") ?: "com.powerlabs.friendify")
     .get()
 
 val isReleaseBuildRequested = gradle.startParameter.taskNames.any {
@@ -75,14 +75,14 @@ if (isReleaseBuildRequested && appId.startsWith("com.example")) {
 if (isReleaseBuildRequested && !googleServicesFile.exists()) {
     throw GradleException(
         "Release build blocked: android/app/google-services.json is missing. " +
-            "Download the Firebase Console file for com.friendify.app first."
+            "Download the Firebase Console file for com.powerlabs.friendify first."
     )
 }
 
 if (isReleaseBuildRequested && googleServicesAndroidClients.isEmpty()) {
     throw GradleException(
         "Release build blocked: android/app/google-services.json does not contain any readable Android client entries. " +
-            "Replace it with the Firebase Console file for com.friendify.app."
+            "Replace it with the Firebase Console file for com.powerlabs.friendify."
     )
 }
 

@@ -1,7 +1,7 @@
 <manifest
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
-    package="com.friendify.app">
+    package="com.powerlabs.friendify">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -25,7 +25,7 @@
         android:enableOnBackInvokedCallback="true">
 
         <activity
-            android:name="com.friendify.app.MainActivity"
+            android:name="com.powerlabs.friendify.MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:theme="@style/LaunchTheme"
