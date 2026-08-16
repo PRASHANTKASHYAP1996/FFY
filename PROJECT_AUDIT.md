@@ -5,8 +5,8 @@
 > Storage, App Check, FCM) · Agora voice · Razorpay payments (INR).
 >
 > Generated audit — reflects the codebase as of the current `main` branch.
-> Status at generation: `flutter analyze` clean · **120 tests pass** · Android
-> debug APK builds · **64 commits ahead of `origin/main` (unpushed)**.
+> Status at generation: `flutter analyze` clean · **136 tests pass** · Android
+> debug APK builds · **75 commits ahead of `origin/main` (unpushed)**.
 
 ---
 
@@ -19,7 +19,7 @@ ratings/leaderboards, wallet top‑ups and listener payouts, moderation, and an
 admin/analytics back office — all in one Flutter app.
 
 **Core loops**
-- **Speaker:** buy credits → find a listener (Discover) → chat / request access →
+- **Speaker:** buy credits → find a listener (Explore) → chat / request access →
   call → pay per minute.
 - **Listener:** go available → receive calls → earn credits → withdraw to bank.
 - **Operator (you):** moderate users, approve withdrawals, watch metrics — via the
@@ -61,9 +61,9 @@ admin/analytics back office — all in one Flutter app.
 └──────────────────────────────────────────────────────────────┘
 
 Pure, unit‑tested logic lives in  lib/shared/**  (no Flutter/Firebase deps):
-  discover_ranking · call_ready_resolver · chat_unread · relative_time ·
-  chat_direction_resolver · listener_availability · wallet_amount_formatter ·
-  chat_navigation_guards · user_safety_actions
+  level_utils · people_match · discover_ranking · call_ready_resolver ·
+  chat_unread · relative_time · chat_direction_resolver · listener_availability ·
+  wallet_amount_formatter · chat_navigation_guards · user_safety_actions
 ```
 
 **Entry point:** `main()` → `FriendifyApp` (`lib/app.dart`) → `BootGate`
@@ -80,7 +80,7 @@ Pure, unit‑tested logic lives in  lib/shared/**  (no Flutter/Firebase deps):
 | 4673 | `chat_conversation_screen.dart` | 1‑on‑1 chat thread, call‑request state machine |
 | 3454 | `admin_dashboard_screen.dart` | **Operator back office** — payouts, moderation, reconciliation *(admins only)* |
 | 2810 | `profile_screen.dart` | Own profile, editor sheet, post composer |
-| 2517 | `redesign/redesign_shell.dart` | **The app home** — 5‑tab shell (Discover/Chats/Call/Feed/Me) |
+| 2645 | `redesign/redesign_shell.dart` | **The app home** — 5‑tab shell (**Home / Explore / Talk / Chats / You**) |
 | 2356 | `match_and_call_screen.dart` | Search + match + start‑call flow |
 | 1769 | `listener_profile_screen.dart` | A listener's public profile, call/chat entry |
 | 1524 | `wallet_details_screen.dart` | Wallet — balance, top‑up, withdraw, statement |
@@ -99,6 +99,9 @@ Pure, unit‑tested logic lives in  lib/shared/**  (no Flutter/Firebase deps):
 | 305 | `rate_call_screen.dart` | Post‑call rating |
 | 282 | `legal_policy_screen.dart` | Legal/policy viewer |
 | 227 | `help_support_screen.dart` | Help & support |
+| 303 | `redesign/call_setup_screen.dart` | Call setup — duration (10/20/30), est. max cost, Start private call |
+| 297 | `redesign/settings_screen.dart` | Settings **bottom sheet** (`showSettingsSheet`) — the You‑tab hub |
+| 184 | `redesign/saved_listeners_screen.dart` | Saved (favourited) listeners |
 | 165 | `redesign/blocked_users_screen.dart` | Manage blocked users |
 | 13 | `main_shell_screen.dart` | Thin wrapper → `RedesignShell` |
 
@@ -127,9 +130,11 @@ Pure, unit‑tested logic lives in  lib/shared/**  (no Flutter/Firebase deps):
 | others | notification_channels · permissions · call_wake_lock · auth_scoped_subscriptions |
 
 ### Pure logic — `lib/shared/` (unit‑tested, no Flutter/Firebase)
-`discover_ranking` · `call_ready_resolver` · `chat_unread` · `relative_time` ·
-`chat_direction_resolver` · `listener_availability` · `chat_navigation_guards` ·
-`user_safety_actions` · `wallet_amount_formatter` + `models/**` + `core/constants/**`.
+`level_utils` (level 1–5 + titles, from follower count) · `people_match` (Explore
+match %) · `discover_ranking` · `call_ready_resolver` · `chat_unread` ·
+`relative_time` · `chat_direction_resolver` · `listener_availability` ·
+`chat_navigation_guards` · `user_safety_actions` · `wallet_amount_formatter`
++ `models/**` + `core/constants/**`.
 
 ---
 
@@ -243,17 +248,26 @@ WalletDetailsScreen "Withdraw" → requestWithdrawal_v1 → withdrawal_requests 
   → adminUpdateWithdrawalPayoutProof_v1 → listener paid
 ```
 
-### ✨ Social feed
+### ✨ Home (social feed)
 ```
-Feed tab / composer → SocialRepository → createSocialPost_v1 (+ like/comment/…)
-  → social_posts → watchFeedPosts stream → RedesignShell Feed cards
+Home tab (story circles = me + follows) / composer → SocialRepository
+  → createSocialPost_v1 → social_posts → watchFeedPosts stream
+  → followed‑only post cards (Like + count + person's L{n}·Title level)
 ```
 
-### 🧭 Discover
+### 🧭 Explore
 ```
 UserRepository.watchAvailableListeners() (public_users, discoverable+isListener)
-  → DiscoverRanking.applyFilters → orderByMood → sortByPriceAscending
-  → listener grid + favourites ("Your people") + search/filters
+  → DiscoverRanking.applyFilters (search) → _applyExploreFilter
+    (For you / Mutuals / Hindi / Rising) → people list rows
+  → each: follow count · PeopleMatch % · L{n}·Title · Follow/Following · tap→profile
+```
+
+### 📞 Talk
+```
+watchAvailableListeners ∩ my follows (online) → per‑minute price + Call
+  → CallSetupScreen (10/20/30 min, est. max cost) → createCallToListener
+HistoryRepository.watchMyCallHistory → Paid/Earned this week + All/Paid/Earned
 ```
 
 ---
@@ -273,7 +287,7 @@ UserRepository.watchAvailableListeners() (public_users, discoverable+isListener)
 
 ---
 
-## 9. Tests (`test/`, 30 files, 120 tests)
+## 9. Tests (`test/`, 32 files, 136 tests)
 
 Pure‑logic + widget coverage. Highlights:
 `discover_ranking_test` (19) · `call_ready_resolver_test` (14) ·
@@ -287,12 +301,25 @@ wallet formatting/copy · onboarding layout · notification/push · legal links.
 ## 10. The UI redesign (this branch)
 
 Converted a dark, Instagram‑like theme to a clean **light‑blue** design system
-(`AppPalette`) with a **5‑tab shell** (🧭 Discover · 💬 Chats · 📞 Call center ·
-✨ Feed · 👤 Me). Screens were restyled in place — **money/call/chat logic was
-never touched**, only colors/layout. UX upgrades shipped: never‑dead‑end moods,
-in‑place search + filters, favourites, listener availability toggle,
-topic/language preset chips, relocated call quick‑dial, wallet untangle, feed
-composer + actionable empty state, a11y labels, admin re‑wire.
+(`AppPalette`), then reshaped it to the finalized prototype: a **5‑tab shell**
+**🏠 Home · 🧭 Explore · 📞 Talk · 💬 Chats · 👤 You**. Screens were restyled in
+place — **money/call/chat logic was never touched**, only colours/layout.
+
+Prototype‑aligned behaviour:
+- **Home** — story circles (you + follows), followed‑only posts, Like + count +
+  the person's `L{n} · Title` level beside the Like area (no comment/share).
+- **Explore** — suggested‑people list rows with Follow/Following, follower count,
+  match %, level, topic; chips **For you / Mutuals / Hindi / Rising**; tap → profile.
+- **Talk** — call hub: Paid/Earned this week, online‑following (price + Call →
+  call setup), call history (All/Paid/Earned). Nobody preselected.
+- **Chats** — conversations + unread; thread with a Call action that opens call setup.
+- **You** — profile + Posts/Followers/Following + level title + my posts;
+  top‑right ⚙ opens the **Settings bottom sheet**.
+- **Levels** — one shared `LevelUtils` (L1<100 … L5≥10k) with titles.
+
+Known gaps (backend‑blocked / cosmetic, reported in the audits): a "Liked" tab
+on You (no "posts I liked" query exists), and the profile opening as a full
+screen rather than the prototype's modal.
 
 ---
 
@@ -331,7 +358,7 @@ composer + actionable empty state, a11y labels, admin re‑wire.
 
 ## 12. Deployment & ship checklist
 
-1. **Push code:** `git push origin main` (currently **64 commits unpushed**).
+1. **Push code:** `git push origin main` (currently **75 commits unpushed**).
 2. **Deploy backend:**
    ```bash
    firebase deploy --only functions,firestore:rules
@@ -348,7 +375,7 @@ composer + actionable empty state, a11y labels, admin re‑wire.
 
 ```bash
 flutter analyze lib test          # static analysis (currently clean)
-flutter test                      # 120 tests
+flutter test                      # 136 tests
 flutter build apk --debug         # Android build sanity check
 node --check functions/index.js   # backend syntax check
 ```
