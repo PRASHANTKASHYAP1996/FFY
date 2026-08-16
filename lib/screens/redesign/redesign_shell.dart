@@ -11,6 +11,7 @@ import '../../shared/call_ready_resolver.dart';
 import '../../shared/chat_unread.dart';
 import '../../shared/discover_ranking.dart';
 import '../../shared/level_utils.dart';
+import '../../shared/people_match.dart';
 import '../../shared/relative_time.dart';
 import '../../shared/models/app_user_model.dart';
 import '../../shared/models/social_post_model.dart';
@@ -194,6 +195,19 @@ String _initialsFromName(String name) {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
+/// Compact count, e.g. 1234 -> "1.2k", 2_000_000 -> "2M".
+String _compactCount(int n) {
+  if (n >= 1000000) {
+    final v = n / 1000000;
+    return '${v.toStringAsFixed(n % 1000000 == 0 ? 0 : 1)}M';
+  }
+  if (n >= 1000) {
+    final v = n / 1000;
+    return '${v.toStringAsFixed(n % 1000 == 0 ? 0 : 1)}k';
+  }
+  return '$n';
+}
+
 class _DiscoverPage extends StatefulWidget {
   const _DiscoverPage();
 
@@ -263,6 +277,31 @@ class _DiscoverPageState extends State<_DiscoverPage> {
       );
     } finally {
       if (mounted) setState(() => _favBusy.remove(id));
+    }
+  }
+
+  // uids with an in-flight follow toggle.
+  final Set<String> _followBusy = <String>{};
+
+  Future<void> _toggleFollow(String uid, bool isFollowingNow) async {
+    final id = uid.trim();
+    if (id.isEmpty || _followBusy.contains(id)) return;
+    setState(() => _followBusy.add(id));
+    try {
+      if (isFollowingNow) {
+        await UserRepository.instance.unfollowUser(id);
+      } else {
+        await UserRepository.instance.followUser(id);
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not update follow. Please try again.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _followBusy.remove(id));
     }
   }
 
@@ -496,6 +535,7 @@ class _DiscoverPageState extends State<_DiscoverPage> {
                     final me = meSnap.data;
                     final favUids =
                         me?.favoriteListeners.toSet() ?? const <String>{};
+                    final followUids = me?.following.toSet() ?? const <String>{};
                     final favorites = favUids.isEmpty
                         ? const <AppUserModel>[]
                         : all
@@ -552,9 +592,18 @@ class _DiscoverPageState extends State<_DiscoverPage> {
                               physics: const NeverScrollableScrollPhysics(),
                               mainAxisSpacing: 12,
                               crossAxisSpacing: 12,
-                              childAspectRatio: 0.92,
+                              childAspectRatio: 0.82,
                               children: listeners.map((u) {
                                 final fav = favUids.contains(u.uid);
+                                final following = followUids.contains(u.uid);
+                                final match = me == null
+                                    ? 0
+                                    : PeopleMatch.percent(
+                                        myTopics: me.topics,
+                                        myLanguages: me.languages,
+                                        theirTopics: u.topics,
+                                        theirLanguages: u.languages,
+                                      );
                                 return _ListenerCard(
                                   user: u,
                                   onTap: () => _openProfile(u),
@@ -562,6 +611,12 @@ class _DiscoverPageState extends State<_DiscoverPage> {
                                   onToggleFavorite: me == null
                                       ? null
                                       : () => _toggleFavorite(u.uid, fav),
+                                  isFollowing: following,
+                                  matchPercent: match,
+                                  onToggleFollow: me == null
+                                      ? null
+                                      : () => _toggleFollow(u.uid, following),
+                                  followBusy: _followBusy.contains(u.uid),
                                 );
                               }).toList(),
                             ),
@@ -586,7 +641,7 @@ class _DiscoverPageState extends State<_DiscoverPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'How are you feeling?',
+            'Explore',
             style: TextStyle(
               fontSize: 19,
               fontWeight: FontWeight.w700,
@@ -595,7 +650,7 @@ class _DiscoverPageState extends State<_DiscoverPage> {
           ),
           const SizedBox(height: 3),
           const Text(
-            "someone's here for you 🌙",
+            'Find your people · follow, then message or call',
             style: TextStyle(fontSize: 13, color: AppPalette.textSecondary),
           ),
           const SizedBox(height: 12),
@@ -711,6 +766,10 @@ class _ListenerCard extends StatelessWidget {
     required this.onTap,
     this.isFavorite = false,
     this.onToggleFavorite,
+    this.isFollowing = false,
+    this.matchPercent = 0,
+    this.onToggleFollow,
+    this.followBusy = false,
   });
   final AppUserModel user;
   final VoidCallback onTap;
@@ -719,8 +778,12 @@ class _ListenerCard extends StatelessWidget {
   /// Null while the current user is still loading — the heart is hidden then.
   final VoidCallback? onToggleFavorite;
 
-  String get _ratingLabel =>
-      user.ratingCount <= 0 ? 'New' : user.ratingAvg.toStringAsFixed(1);
+  final bool isFollowing;
+  final int matchPercent;
+
+  /// Null while the current user is still loading — the Follow button hides.
+  final VoidCallback? onToggleFollow;
+  final bool followBusy;
 
   bool get _online => user.isAvailable && !user.isOnCall;
 
@@ -820,53 +883,73 @@ class _ListenerCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 10),
-            Text(
-              user.safeDisplayName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: AppPalette.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 2),
             Row(
               children: [
-                const Icon(Icons.star_rounded,
-                    size: 14, color: AppPalette.star),
-                const SizedBox(width: 3),
-                Expanded(
+                Flexible(
                   child: Text(
-                    '$_ratingLabel · ₹${user.listenerRate}/min',
+                    user.safeDisplayName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                        fontSize: 12, color: AppPalette.textSecondary),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: AppPalette.textPrimary,
+                    ),
                   ),
                 ),
+                const SizedBox(width: 6),
+                _LevelBadge(user.followersCount),
               ],
+            ),
+            const SizedBox(height: 3),
+            Text(
+              matchPercent > 0
+                  ? '${_compactCount(user.followersCount)} followers · '
+                      '$matchPercent% match'
+                  : '${_compactCount(user.followersCount)} followers',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                  fontSize: 12, color: AppPalette.textSecondary),
             ),
             _chipsRow(),
             const Spacer(),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: onTap,
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppPalette.blue,
-                  padding: const EdgeInsets.symmetric(vertical: 9),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  minimumSize: const Size(0, 0),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                child: const Text('Talk',
-                    style:
-                        TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+            if (onToggleFollow != null)
+              SizedBox(
+                width: double.infinity,
+                child: isFollowing
+                    ? OutlinedButton(
+                        onPressed: followBusy ? null : onToggleFollow,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppPalette.textSecondary,
+                          side: const BorderSide(color: AppPalette.border),
+                          padding: const EdgeInsets.symmetric(vertical: 9),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          minimumSize: const Size(0, 0),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text('Following',
+                            style: TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w600)),
+                      )
+                    : FilledButton(
+                        onPressed: followBusy ? null : onToggleFollow,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppPalette.blue,
+                          padding: const EdgeInsets.symmetric(vertical: 9),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          minimumSize: const Size(0, 0),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text('Follow',
+                            style: TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w600)),
+                      ),
               ),
-            ),
           ],
         ),
       ),
