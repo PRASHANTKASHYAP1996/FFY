@@ -116,21 +116,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 16),
             _section('Money'),
             _row(Icons.account_balance_wallet_outlined, 'Wallet & Payments',
-                () => _open(const WalletDetailsScreen())),
+                () => _open(const WalletDetailsScreen()),
+                sub: 'Balance, transactions & top-ups'),
             _row(Icons.payments_outlined, 'Earnings',
-                () => _open(const EarningsScreen())),
+                () => _open(const EarningsScreen()),
+                sub: 'Your listener payouts'),
             const SizedBox(height: 16),
             _section('People & history'),
             _row(Icons.favorite_border_rounded, 'Saved Listeners',
-                () => _open(const SavedListenersScreen())),
+                () => _open(const SavedListenersScreen()),
+                sub: 'People you trust'),
             _row(Icons.access_time_rounded, 'Call History',
-                () => _open(const CallHistoryScreen())),
+                () => _open(const CallHistoryScreen()),
+                sub: 'Your private conversations'),
             const SizedBox(height: 16),
             _section('Safety & support'),
             _row(Icons.shield_outlined, 'Safety & Privacy',
-                () => _open(const BlockedUsersScreen())),
+                () => _open(const BlockedUsersScreen()),
+                sub: 'Blocks, reports & account controls'),
             _row(Icons.help_outline_rounded, 'Help & Support',
-                () => _open(const HelpSupportScreen())),
+                () => _open(const HelpSupportScreen()),
+                sub: 'Support & crisis resources'),
             FutureBuilder<bool>(
               future: _isAdmin,
               builder: (context, snap) {
@@ -178,7 +184,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _row(IconData icon, String label, VoidCallback onTap,
-      {bool danger = false}) {
+      {bool danger = false, String? sub}) {
     final color = danger ? AppPalette.rose : AppPalette.textPrimary;
     return InkWell(
       onTap: onTap,
@@ -192,13 +198,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 color: danger ? AppPalette.rose : AppPalette.textSecondary),
             const SizedBox(width: 14),
             Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: color,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: color,
+                    ),
+                  ),
+                  if (sub != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      sub,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppPalette.textMuted,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
             if (!danger)

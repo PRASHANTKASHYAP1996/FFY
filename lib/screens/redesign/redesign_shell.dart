@@ -576,13 +576,7 @@ class _DiscoverPageState extends State<_DiscoverPage> {
                           if (listeners.isEmpty)
                             _noMatches()
                           else
-                            GridView.count(
-                              crossAxisCount: 2,
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              mainAxisSpacing: 12,
-                              crossAxisSpacing: 12,
-                              childAspectRatio: 0.82,
+                            Column(
                               children: listeners.map((u) {
                                 final fav = favUids.contains(u.uid);
                                 final following = followUids.contains(u.uid);
@@ -594,19 +588,22 @@ class _DiscoverPageState extends State<_DiscoverPage> {
                                         theirTopics: u.topics,
                                         theirLanguages: u.languages,
                                       );
-                                return _ListenerCard(
-                                  user: u,
-                                  onTap: () => _openProfile(u),
-                                  isFavorite: fav,
-                                  onToggleFavorite: me == null
-                                      ? null
-                                      : () => _toggleFavorite(u.uid, fav),
-                                  isFollowing: following,
-                                  matchPercent: match,
-                                  onToggleFollow: me == null
-                                      ? null
-                                      : () => _toggleFollow(u.uid, following),
-                                  followBusy: _followBusy.contains(u.uid),
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: _ListenerCard(
+                                    user: u,
+                                    onTap: () => _openProfile(u),
+                                    isFavorite: fav,
+                                    onToggleFavorite: me == null
+                                        ? null
+                                        : () => _toggleFavorite(u.uid, fav),
+                                    isFollowing: following,
+                                    matchPercent: match,
+                                    onToggleFollow: me == null
+                                        ? null
+                                        : () => _toggleFollow(u.uid, following),
+                                    followBusy: _followBusy.contains(u.uid),
+                                  ),
                                 );
                               }).toList(),
                             ),
@@ -777,169 +774,153 @@ class _ListenerCard extends StatelessWidget {
 
   bool get _online => user.isAvailable && !user.isOnCall;
 
-  /// Up to two topic chips (falls back to languages), plus a "+N" pill when
-  /// there are more. Fills the card's dead space and tells people at a glance
-  /// what a listener is here for. Collapses to nothing when neither is set.
-  Widget _chipsRow() {
-    final source = user.topics.isNotEmpty ? user.topics : user.languages;
-    final tags = source
-        .map((t) => t.trim())
-        .where((t) => t.isNotEmpty)
-        .toList(growable: false);
-    if (tags.isEmpty) return const SizedBox.shrink();
-    final shown = tags.take(2).toList();
-    final extra = tags.length - shown.length;
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Row(
-        children: [
-          for (final t in shown) ...[
-            Flexible(child: _chip(t)),
-            const SizedBox(width: 5),
-          ],
-          if (extra > 0) _chip('+$extra', strong: true),
-        ],
-      ),
-    );
-  }
-
-  Widget _chip(String label, {bool strong = false}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: AppPalette.blueTint,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: strong ? FontWeight.w700 : FontWeight.w500,
-          color: AppPalette.blue,
+  Widget _followButton() {
+    if (isFollowing) {
+      return OutlinedButton(
+        onPressed: followBusy ? null : onToggleFollow,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppPalette.textSecondary,
+          side: const BorderSide(color: AppPalette.border),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          minimumSize: const Size(0, 0),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
+        child: const Text('Following',
+            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+      );
+    }
+    return FilledButton(
+      onPressed: followBusy ? null : onToggleFollow,
+      style: FilledButton.styleFrom(
+        backgroundColor: AppPalette.blue,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        minimumSize: const Size(0, 0),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
+      child: const Text('Follow',
+          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final topic = user.topics.isNotEmpty
+        ? user.topics.first
+        : (user.languages.isNotEmpty ? user.languages.first : '');
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Container(
         padding: const EdgeInsets.all(12),
-        decoration: AppPalette.cardDecoration(),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        decoration: AppPalette.cardDecoration(radius: 16),
+        child: Row(
           children: [
-            Row(
+            Stack(
+              clipBehavior: Clip.none,
               children: [
                 _Avatar(
                   initials: _initialsFromName(user.safeDisplayName),
                   photoUrl: user.photoURL,
-                  size: 40,
+                  size: 52,
                 ),
-                const Spacer(),
-                if (_online) const _OnlineDot(),
-                if (onToggleFavorite != null) ...[
-                  const SizedBox(width: 4),
-                  MergeSemantics(
-                    child: Semantics(
-                      button: true,
-                      label: isFavorite
-                          ? 'Remove from favourites'
-                          : 'Add to favourites',
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: onToggleFavorite,
-                        child: Padding(
-                          padding: const EdgeInsets.all(2),
-                          child: Icon(
-                            isFavorite
-                                ? Icons.favorite_rounded
-                                : Icons.favorite_border_rounded,
-                            size: 20,
-                            color: isFavorite
-                                ? AppPalette.rose
-                                : AppPalette.textMuted,
-                          ),
-                        ),
+                if (_online)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 14,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: AppPalette.online,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppPalette.card, width: 2),
                       ),
                     ),
                   ),
-                ],
               ],
             ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Flexible(
-                  child: Text(
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
                     user.safeDisplayName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 15,
+                      fontSize: 15.5,
                       fontWeight: FontWeight.w600,
                       color: AppPalette.textPrimary,
                     ),
                   ),
-                ),
-                const SizedBox(width: 6),
-                _LevelBadge(user.followersCount),
-              ],
-            ),
-            const SizedBox(height: 3),
-            Text(
-              matchPercent > 0
-                  ? '${_compactCount(user.followersCount)} followers · '
-                      '$matchPercent% match'
-                  : '${_compactCount(user.followersCount)} followers',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                  fontSize: 12, color: AppPalette.textSecondary),
-            ),
-            _chipsRow(),
-            const Spacer(),
-            if (onToggleFollow != null)
-              SizedBox(
-                width: double.infinity,
-                child: isFollowing
-                    ? OutlinedButton(
-                        onPressed: followBusy ? null : onToggleFollow,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppPalette.textSecondary,
-                          side: const BorderSide(color: AppPalette.border),
-                          padding: const EdgeInsets.symmetric(vertical: 9),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          minimumSize: const Size(0, 0),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        child: const Text('Following',
-                            style: TextStyle(
-                                fontSize: 14, fontWeight: FontWeight.w600)),
-                      )
-                    : FilledButton(
-                        onPressed: followBusy ? null : onToggleFollow,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: AppPalette.blue,
-                          padding: const EdgeInsets.symmetric(vertical: 9),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          minimumSize: const Size(0, 0),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        child: const Text('Follow',
-                            style: TextStyle(
-                                fontSize: 14, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text(
+                    LevelUtils.levelTag(user.followersCount),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppPalette.blue,
+                    ),
+                  ),
+                  if (topic.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      topic,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: AppPalette.textSecondary,
                       ),
+                    ),
+                  ],
+                  const SizedBox(height: 3),
+                  Text(
+                    matchPercent > 0
+                        ? '${_compactCount(user.followersCount)} followers · '
+                            '$matchPercent% match'
+                        : '${_compactCount(user.followersCount)} followers',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppPalette.textMuted,
+                    ),
+                  ),
+                ],
               ),
+            ),
+            const SizedBox(width: 8),
+            if (onToggleFavorite != null)
+              MergeSemantics(
+                child: Semantics(
+                  button: true,
+                  label: isFavorite ? 'Remove from saved' : 'Save',
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onToggleFavorite,
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Icon(
+                        isFavorite
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
+                        size: 20,
+                        color:
+                            isFavorite ? AppPalette.rose : AppPalette.textMuted,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            const SizedBox(width: 4),
+            if (onToggleFollow != null) _followButton(),
           ],
         ),
       ),
