@@ -25,7 +25,7 @@ class CallSetupScreen extends StatefulWidget {
 class _CallSetupScreenState extends State<CallSetupScreen> {
   final CallRepository _callRepository = CallRepository.instance;
 
-  static const List<int> _durations = <int>[5, 10, 15, 30];
+  static const List<int> _durations = <int>[10, 20, 30];
   int _minutes = 10;
   bool _starting = false;
 
@@ -174,8 +174,7 @@ class _CallSetupScreenState extends State<CallSetupScreen> {
               spacing: 10,
               runSpacing: 10,
               children: [
-                for (final m in _durations)
-                  _durationChip(m),
+                for (final m in _durations) _durationChip(m),
               ],
             ),
             const SizedBox(height: 22),
@@ -243,8 +242,8 @@ class _CallSetupScreenState extends State<CallSetupScreen> {
                     : const Icon(Icons.lock_rounded, size: 18),
                 label: Text(
                   _starting ? 'Starting…' : 'Start private call',
-                  style:
-                      const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w700),
                 ),
               ),
             ),

@@ -37,6 +37,19 @@ void main() {
     expect(LevelUtils.levelLabel(50000), 'Lv 5');
   });
 
+  test('level titles match the prototype (L2–L4) with L1/L5 fallbacks', () {
+    expect(LevelUtils.levelTitle(50), 'New Voice');
+    expect(LevelUtils.levelTitle(326), 'Rising Voice');
+    expect(LevelUtils.levelTitle(842), 'Trusted Voice');
+    expect(LevelUtils.levelTitle(2900), 'Community Star');
+    expect(LevelUtils.levelTitle(12000), 'Guiding Light');
+  });
+
+  test('levelTag formats as "L{n} · Title"', () {
+    expect(LevelUtils.levelTag(2900), 'L4 · Community Star');
+    expect(LevelUtils.levelTag(326), 'L2 · Rising Voice');
+  });
+
   group('followersToNextLevel', () {
     test('distance to the next threshold', () {
       expect(LevelUtils.followersToNextLevel(0), 100);

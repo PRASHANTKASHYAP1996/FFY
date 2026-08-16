@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_palette.dart';
 import '../../repositories/admin_repository.dart';
 import '../../repositories/user_repository.dart';
+import '../../shared/models/app_user_model.dart';
 import '../admin_dashboard_screen.dart';
 import '../analytics_dashboard_screen.dart';
 import '../call_history_screen.dart';
@@ -28,9 +29,63 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   // Resolved once: a server round-trip that only the real admin passes.
   final Future<bool> _isAdmin = AdminRepository.instance.isCurrentUserAdmin();
+  final Stream<AppUserModel?> _me = UserRepository.instance.watchMe();
+  bool _availabilityBusy = false;
 
   void _open(Widget screen) {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+  }
+
+  Future<void> _setAvailability(bool value) async {
+    if (_availabilityBusy) return;
+    setState(() => _availabilityBusy = true);
+    try {
+      await UserRepository.instance.setAvailability(value);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not update. Please try again.')),
+      );
+    } finally {
+      if (mounted) setState(() => _availabilityBusy = false);
+    }
+  }
+
+  Widget _availabilityRow() {
+    return StreamBuilder<AppUserModel?>(
+      stream: _me,
+      builder: (context, snap) {
+        final me = snap.data;
+        if (me == null || !me.isListener) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+          child: Row(
+            children: [
+              const Icon(Icons.podcasts_rounded,
+                  size: 22, color: AppPalette.textSecondary),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Text(
+                  'Available for calls',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppPalette.textPrimary,
+                  ),
+                ),
+              ),
+              Semantics(
+                label: 'Available for calls',
+                child: Switch(
+                  value: me.isAvailable,
+                  onChanged: _availabilityBusy ? null : _setAvailability,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _logout() async {
@@ -55,6 +110,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
           children: [
             _section('Account'),
+            _availabilityRow(),
             _row(Icons.person_outline_rounded, 'Edit profile',
                 () => _open(const ProfileScreen())),
             const SizedBox(height: 16),

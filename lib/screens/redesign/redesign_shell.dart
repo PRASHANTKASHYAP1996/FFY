@@ -167,7 +167,6 @@ class _BottomNav extends StatelessWidget {
       ),
     );
   }
-
 }
 
 // ---------------------------------------------------------------------------
@@ -525,7 +524,8 @@ class _DiscoverPageState extends State<_DiscoverPage> {
                     final me = meSnap.data;
                     final favUids =
                         me?.favoriteListeners.toSet() ?? const <String>{};
-                    final followUids = me?.following.toSet() ?? const <String>{};
+                    final followUids =
+                        me?.following.toSet() ?? const <String>{};
                     final favorites = favUids.isEmpty
                         ? const <AppUserModel>[]
                         : all
@@ -970,106 +970,6 @@ class _DiscoverMessage extends StatelessWidget {
   }
 }
 
-/// Listener availability switch, shared by the Me and Call tabs. Toggling off
-/// hides the listener's online state and makes new calls fail readiness ("not
-/// available right now"); it does not touch listener mode or discoverability.
-/// Backed by UserRepository.setAvailability; the parent's watchMe stream
-/// supplies [available] and reflects each write.
-class _AvailabilityCard extends StatefulWidget {
-  const _AvailabilityCard({required this.available});
-
-  final bool available;
-
-  @override
-  State<_AvailabilityCard> createState() => _AvailabilityCardState();
-}
-
-class _AvailabilityCardState extends State<_AvailabilityCard> {
-  bool _busy = false;
-
-  Future<void> _set(bool value) async {
-    if (_busy) return;
-    setState(() => _busy = true);
-    try {
-      await UserRepository.instance.setAvailability(value);
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not update availability. Please try again.'),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final available = widget.available;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: AppPalette.cardDecoration(radius: 16),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: available
-                  ? AppPalette.online.withValues(alpha: 0.14)
-                  : AppPalette.feedBg,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              available
-                  ? Icons.podcasts_rounded
-                  : Icons.pause_circle_outline_rounded,
-              color: available ? AppPalette.online : AppPalette.textMuted,
-              size: 22,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  available ? 'Available now' : 'Unavailable',
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: AppPalette.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  available
-                      ? 'People see you online and can start calls.'
-                      : "You're hidden as online and new calls are paused.",
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    height: 1.3,
-                    color: AppPalette.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Semantics(
-            label: 'Available for calls',
-            child: Switch(
-              value: available,
-              onChanged: _busy ? null : _set,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Me (own profile + wallet + settings hub)
 // ---------------------------------------------------------------------------
@@ -1138,56 +1038,74 @@ class _MePageState extends State<_MePage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppPalette.textPrimary,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            _LevelBadge(followers),
-                          ],
-                        ),
-                        const SizedBox(height: 3),
                         Text(
-                          me?.isListener == true ? 'Listener' : 'Member',
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            fontSize: 12.5,
-                            color: AppPalette.textSecondary,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: AppPalette.textPrimary,
                           ),
                         ),
+                        if ((me?.bio ?? '').trim().isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            me!.bio.trim(),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              height: 1.35,
+                              color: AppPalette.textSecondary,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 5),
+                        _LevelBadge(followers),
                       ],
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                decoration: AppPalette.cardDecoration(radius: 16),
-                child: Row(
-                  children: [
-                    _stat('Followers', _compactCount(followers)),
-                    _statDivider(),
-                    _stat('Following', _compactCount(following)),
-                    _statDivider(),
-                    _stat('Level',
-                        '${LevelUtils.levelForFollowers(followers)}'),
-                  ],
+              StreamBuilder<List<SocialPostModel>>(
+                stream: _myPosts,
+                builder: (context, postsSnap) {
+                  final postCount =
+                      (postsSnap.data ?? const <SocialPostModel>[]).length;
+                  return Container(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: AppPalette.cardDecoration(radius: 16),
+                    child: Row(
+                      children: [
+                        _stat('Posts', '$postCount'),
+                        _statDivider(),
+                        _stat('Followers', _compactCount(followers)),
+                        _statDivider(),
+                        _stat('Following', _compactCount(following)),
+                      ],
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: () => _open(const ProfileScreen()),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppPalette.textPrimary,
+                    side: const BorderSide(color: AppPalette.border),
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text('Edit profile',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
                 ),
               ),
-              if (me != null && me.isListener) ...[
-                const SizedBox(height: 14),
-                _AvailabilityCard(available: me.isAvailable),
-              ],
               const SizedBox(height: 22),
               const Text(
                 'My posts',
@@ -1584,11 +1502,13 @@ class _CallPageState extends State<_CallPage> {
                           color: AppPalette.textPrimary,
                         ),
                       ),
-                      const SizedBox(height: 14),
-                      if (me != null && me.isListener) ...[
-                        _AvailabilityCard(available: me.isAvailable),
-                        const SizedBox(height: 16),
-                      ],
+                      const SizedBox(height: 2),
+                      const Text(
+                        'Your call hub — track paid & earned minutes.',
+                        style: TextStyle(
+                            fontSize: 13, color: AppPalette.textSecondary),
+                      ),
+                      const SizedBox(height: 16),
                       _weekCards(history),
                       const SizedBox(height: 22),
                       _onlineSection(me, listeners),
@@ -1611,30 +1531,46 @@ class _CallPageState extends State<_CallPage> {
         DateTime.now().millisecondsSinceEpoch - 7 * 24 * 60 * 60 * 1000;
     var paid = 0;
     var earned = 0;
+    var paidSeconds = 0;
+    var earnedCalls = 0;
     for (final it in history) {
       if (it.amount <= 0 || it.endedAtMs < cutoff) continue;
       if (it.isIncoming) {
         earned += it.amount;
+        earnedCalls += 1;
       } else {
         paid += it.amount;
+        paidSeconds += it.seconds < 0 ? 0 : it.seconds;
       }
     }
+    final paidMinutes = paidSeconds ~/ 60;
     return Row(
       children: [
         Expanded(
-          child: _summaryCard('Paid this week', '₹$paid',
-              Icons.call_made_rounded, AppPalette.blue),
+          child: _summaryCard(
+            'Paid this week',
+            '₹$paid',
+            '$paidMinutes ${paidMinutes == 1 ? 'minute' : 'minutes'}',
+            Icons.call_made_rounded,
+            AppPalette.blue,
+          ),
         ),
         const SizedBox(width: 12),
         Expanded(
-          child: _summaryCard('Earned this week', '₹$earned',
-              Icons.call_received_rounded, AppPalette.online),
+          child: _summaryCard(
+            'Earned this week',
+            '₹$earned',
+            '$earnedCalls listener ${earnedCalls == 1 ? 'call' : 'calls'}',
+            Icons.call_received_rounded,
+            AppPalette.online,
+          ),
         ),
       ],
     );
   }
 
-  Widget _summaryCard(String label, String value, IconData icon, Color color) {
+  Widget _summaryCard(
+      String label, String value, String sub, IconData icon, Color color) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: AppPalette.cardDecoration(radius: 16),
@@ -1666,6 +1602,16 @@ class _CallPageState extends State<_CallPage> {
               fontSize: 22,
               fontWeight: FontWeight.w800,
               color: color,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            sub,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 11.5,
+              color: AppPalette.textMuted,
             ),
           ),
         ],
@@ -1770,27 +1716,23 @@ class _CallPageState extends State<_CallPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        u.safeDisplayName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: AppPalette.textPrimary,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    _LevelBadge(u.followersCount),
-                  ],
+                Text(
+                  u.safeDisplayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppPalette.textPrimary,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '₹$rate/min',
+                  u.topics.isNotEmpty
+                      ? '₹$rate/min · ${u.topics.first}'
+                      : '₹$rate/min',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 12.5,
                     color: AppPalette.textSecondary,
@@ -2132,8 +2074,9 @@ class _FeedPageState extends State<_FeedPage> {
                     final visible = all
                         .where((p) => following.contains(p.ownerId))
                         .toList(growable: false);
-                    final stories =
-                        me == null ? const SizedBox.shrink() : _storyCircles(me);
+                    final stories = me == null
+                        ? const SizedBox.shrink()
+                        : _storyCircles(me);
                     if (visible.isEmpty) {
                       return Column(
                         children: [stories, Expanded(child: _emptyFeed())],
@@ -2176,11 +2119,12 @@ class _FeedPageState extends State<_FeedPage> {
             children: [
               const Expanded(
                 child: Text(
-                  'Home',
+                  'friendify',
                   style: TextStyle(
-                    fontSize: 19,
-                    fontWeight: FontWeight.w700,
-                    color: AppPalette.textPrimary,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.3,
+                    color: AppPalette.blue,
                   ),
                 ),
               ),
@@ -2381,7 +2325,9 @@ class _LevelBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        'Lv ${LevelUtils.levelForFollowers(followers)}',
+        LevelUtils.levelTag(followers),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: const TextStyle(
           fontSize: 10.5,
           fontWeight: FontWeight.w700,
@@ -2526,26 +2472,26 @@ class _FeedPostCardState extends State<_FeedPostCard> {
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Flexible(
-                    child: Text(
-                      _post.ownerName.isEmpty ? 'Someone' : _post.ownerName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: AppPalette.textPrimary,
-                      ),
+                  Text(
+                    _post.ownerName.isEmpty ? 'Someone' : _post.ownerName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: AppPalette.textPrimary,
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  // The person's level, beside their name.
                   FutureBuilder<AppUserModel?>(
                     future: widget.resolveOwner(_post.ownerId),
-                    builder: (context, snap) =>
-                        _LevelBadge(snap.data?.followersCount ?? 0),
+                    builder: (context, snap) => Text(
+                      '${_compactCount(snap.data?.followersCount ?? 0)} followers',
+                      style: const TextStyle(
+                          fontSize: 12, color: AppPalette.textMuted),
+                    ),
                   ),
                 ],
               ),
@@ -2565,56 +2511,65 @@ class _FeedPostCardState extends State<_FeedPostCard> {
   Widget _actions() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 4, 12, 10),
-      child: StreamBuilder<bool>(
-        stream: _likedStream,
-        builder: (context, snap) {
-          final serverLiked = snap.data ?? false;
-          // Once the server confirms the optimistic value, drop the override
-          // so later changes (e.g. from another device) show.
-          if (!_busy && snap.hasData && _likedOverride == serverLiked) {
-            _likedOverride = null;
-          }
-          final liked = _likedOverride ?? serverLiked;
-          return Align(
-            alignment: Alignment.centerLeft,
-            child: MergeSemantics(
-              child: Semantics(
-                button: true,
-                label: liked ? 'Unlike' : 'Like',
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(999),
-                  onTap: () => _toggleLike(liked),
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          liked
-                              ? Icons.favorite_rounded
-                              : Icons.favorite_border_rounded,
-                          size: 22,
-                          color:
-                              liked ? AppPalette.rose : AppPalette.textSecondary,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          '${_post.likeCount}',
-                          style: const TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w600,
-                            color: AppPalette.textSecondary,
+      child: Row(
+        children: [
+          StreamBuilder<bool>(
+            stream: _likedStream,
+            builder: (context, snap) {
+              final serverLiked = snap.data ?? false;
+              // Once the server confirms the optimistic value, drop the
+              // override so later changes (e.g. from another device) show.
+              if (!_busy && snap.hasData && _likedOverride == serverLiked) {
+                _likedOverride = null;
+              }
+              final liked = _likedOverride ?? serverLiked;
+              return MergeSemantics(
+                child: Semantics(
+                  button: true,
+                  label: liked ? 'Unlike' : 'Like',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: () => _toggleLike(liked),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 6),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            liked
+                                ? Icons.favorite_rounded
+                                : Icons.favorite_border_rounded,
+                            size: 22,
+                            color: liked
+                                ? AppPalette.rose
+                                : AppPalette.textSecondary,
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 6),
+                          Text(
+                            '${_post.likeCount}',
+                            style: const TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w600,
+                              color: AppPalette.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
-          );
-        },
+              );
+            },
+          ),
+          const Spacer(),
+          // The person's level, immediately beside the Like area.
+          FutureBuilder<AppUserModel?>(
+            future: widget.resolveOwner(_post.ownerId),
+            builder: (context, snap) =>
+                _LevelBadge(snap.data?.followersCount ?? 0),
+          ),
+        ],
       ),
     );
   }
