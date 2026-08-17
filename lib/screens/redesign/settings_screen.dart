@@ -176,14 +176,28 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                   const SizedBox(height: 18),
                   _row(Icons.logout_rounded, 'Log out', _logout, danger: true),
                   const Padding(
-                    padding: EdgeInsets.fromLTRB(4, 14, 4, 4),
-                    child: Text(
-                      'Friendify is emotional support, not professional therapy.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppPalette.textMuted,
-                        height: 1.35,
-                      ),
+                    padding: EdgeInsets.fromLTRB(4, 16, 4, 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Friendify — by PowerX',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppPalette.textSecondary,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Emotional support, not professional therapy.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppPalette.textMuted,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],

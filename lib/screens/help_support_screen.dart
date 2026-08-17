@@ -207,6 +207,29 @@ class HelpSupportScreen extends StatelessWidget {
               icon: const Icon(Icons.delete_outline_rounded),
               label: const Text('Account deletion information'),
             ),
+            const SizedBox(height: 24),
+            const Center(
+              child: Text(
+                'Friendify — by PowerX',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppPalette.textSecondary,
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Center(
+              child: Text(
+                'An independent product, owned & published by PowerX.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppPalette.textMuted,
+                  height: 1.35,
+                ),
+              ),
+            ),
           ],
         ),
       ),
