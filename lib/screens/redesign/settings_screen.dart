@@ -13,6 +13,7 @@ import '../earnings_screen.dart';
 import '../help_support_screen.dart';
 import '../profile_screen.dart';
 import '../wallet_details_screen.dart';
+import 'about_screen.dart';
 import 'blocked_users_screen.dart';
 import 'saved_listeners_screen.dart';
 
@@ -148,6 +149,9 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                   _row(Icons.help_outline_rounded, 'Help & Support',
                       () => _open(const HelpSupportScreen()),
                       sub: 'Support & crisis resources'),
+                  _row(Icons.info_outline_rounded, 'About',
+                      () => _open(const AboutScreen()),
+                      sub: 'Version, legal & attribution'),
                   FutureBuilder<bool>(
                     future: _isAdmin,
                     builder: (context, snap) {
