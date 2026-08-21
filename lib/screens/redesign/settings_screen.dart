@@ -55,7 +55,9 @@ class _SettingsSheetState extends State<_SettingsSheet> {
   Future<void> _logout() async {
     final nav = Navigator.of(context);
     await UserRepository.instance.signOut();
-    nav.pop();
+    // The auth-state listener may already have torn down this route; only pop
+    // the sheet if we're still mounted and there is something to pop.
+    if (mounted && nav.canPop()) nav.pop();
   }
 
   Future<void> _setAvailability(bool value) async {

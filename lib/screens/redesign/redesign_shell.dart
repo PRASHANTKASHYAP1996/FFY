@@ -190,6 +190,8 @@ String _compactCount(int n) {
     final v = n / 1000000;
     return '${v.toStringAsFixed(n % 1000000 == 0 ? 0 : 1)}M';
   }
+  // 999_950–999_999 would round to a malformed "1000.0k"; show "1M".
+  if (n >= 999950) return '1M';
   if (n >= 1000) {
     final v = n / 1000;
     return '${v.toStringAsFixed(n % 1000 == 0 ? 0 : 1)}k';
@@ -259,7 +261,11 @@ class _DiscoverPageState extends State<_DiscoverPage> {
       case _ExploreFilter.forYou:
         final list = people.toList();
         if (me != null) {
-          list.sort((a, b) => _matchWith(me, b).compareTo(_matchWith(me, a)));
+          // Decorate-sort-undecorate: compute each match% once, not O(n log n)
+          // times inside the comparator on every keystroke.
+          final scored = [for (final u in list) (u, _matchWith(me, u))];
+          scored.sort((a, b) => b.$2.compareTo(a.$2));
+          return [for (final e in scored) e.$1];
         }
         return list;
       case _ExploreFilter.mutuals:
@@ -919,8 +925,11 @@ class _MePage extends StatefulWidget {
 class _MePageState extends State<_MePage> {
   final Stream<AppUserModel?> _me = UserRepository.instance.watchMe();
   final String _myUid = UserRepository.instance.myUidOrNull ?? '';
+  // Broadcast: the You tab subscribes from two StreamBuilders at once (the
+  // stats post-count and the posts grid). watchUserPosts' signed-in path is a
+  // single-subscription Firestore stream, so a second listen would throw.
   late final Stream<List<SocialPostModel>> _myPosts =
-      SocialRepository.instance.watchUserPosts(_myUid);
+      SocialRepository.instance.watchUserPosts(_myUid).asBroadcastStream();
 
   void _open(Widget screen) {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
