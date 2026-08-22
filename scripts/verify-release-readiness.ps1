@@ -4,7 +4,7 @@ param()
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$expectedPackageName = 'com.friendify.app'
+$expectedPackageName = 'com.powerx.friendify'
 
 $googleServicesPath = Join-Path $repoRoot 'android\app\google-services.json'
 $firebaseOptionsPath = Join-Path $repoRoot 'lib\firebase_options.dart'

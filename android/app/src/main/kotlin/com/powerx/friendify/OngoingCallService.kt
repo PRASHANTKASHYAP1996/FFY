@@ -1,4 +1,4 @@
-package com.powerlabs.friendify
+package com.powerx.friendify
 
 import android.app.Service
 import android.content.Context
@@ -77,8 +77,8 @@ class OngoingCallService : Service() {
 
     companion object {
         private const val TAG = "NativeCallOngoing"
-        private const val ACTION_START = "com.powerlabs.friendify.ACTION_START_ONGOING_CALL"
-        private const val ACTION_STOP = "com.powerlabs.friendify.ACTION_STOP_ONGOING_CALL"
+        private const val ACTION_START = "com.powerx.friendify.ACTION_START_ONGOING_CALL"
+        private const val ACTION_STOP = "com.powerx.friendify.ACTION_STOP_ONGOING_CALL"
         private const val EXTRA_DISPLAY_NAME = "displayName"
 
         fun start(context: Context, callId: String, displayName: String): Boolean {

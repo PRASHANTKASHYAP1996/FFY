@@ -1,4 +1,4 @@
-package com.powerlabs.friendify
+package com.powerx.friendify
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -52,9 +52,9 @@ class IncomingCallActionReceiver : BroadcastReceiver() {
     }
 
     companion object {
-        const val ACTION_ANSWER_CALL = "com.powerlabs.friendify.ACTION_ANSWER_CALL"
-        const val ACTION_REJECT_CALL = "com.powerlabs.friendify.ACTION_REJECT_CALL"
-        const val ACTION_HANGUP_CALL = "com.powerlabs.friendify.ACTION_HANGUP_CALL"
+        const val ACTION_ANSWER_CALL = "com.powerx.friendify.ACTION_ANSWER_CALL"
+        const val ACTION_REJECT_CALL = "com.powerx.friendify.ACTION_REJECT_CALL"
+        const val ACTION_HANGUP_CALL = "com.powerx.friendify.ACTION_HANGUP_CALL"
         private const val TAG = "NativeCallAction"
     }
 }

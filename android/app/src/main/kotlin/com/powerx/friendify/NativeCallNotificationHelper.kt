@@ -1,4 +1,4 @@
-package com.powerlabs.friendify
+package com.powerx.friendify
 
 import android.app.Notification
 import android.app.NotificationChannel

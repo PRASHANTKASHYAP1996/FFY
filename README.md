@@ -79,33 +79,33 @@ keyPassword=***
 
 Set your final Android package id using either:
 
-- environment variable: `ORG_GRADLE_PROJECT_FRIENDIFY_APP_ID=com.friendify.app`
-- or `friendify.appId=com.friendify.app` in `android/local.properties`
+- environment variable: `ORG_GRADLE_PROJECT_FRIENDIFY_APP_ID=com.powerx.friendify`
+- or `friendify.appId=com.powerx.friendify` in `android/local.properties`
 
 Example release build commands:
 
 ```powershell
-$env:ORG_GRADLE_PROJECT_FRIENDIFY_APP_ID='com.friendify.app'
+$env:ORG_GRADLE_PROJECT_FRIENDIFY_APP_ID='com.powerx.friendify'
 flutter build appbundle --release
 ```
 
 ```properties
 # android/local.properties
-friendify.appId=com.friendify.app
+friendify.appId=com.powerx.friendify
 ```
 
 ### 5) Final package / Firebase migration before Play Store
 
-Current repo-side package/Firebase alignment is configured for `com.friendify.app` and is checked by `scripts/verify-release-readiness.ps1`.
+Current repo-side package/Firebase alignment is configured for `com.powerx.friendify` and is checked by `scripts/verify-release-readiness.ps1`.
 
 Keep these gates intact for final production builds:
 
-1. Final Android package id remains `com.friendify.app`.
+1. Final Android package id remains `com.powerx.friendify`.
 2. Android source stays at `android/app/src/main/kotlin/com/friendify/app/MainActivity.kt` with the matching Kotlin package declaration.
-3. Set `ORG_GRADLE_PROJECT_FRIENDIFY_APP_ID=com.friendify.app` (or `friendify.appId=com.friendify.app`) for Android builds.
-4. Keep the Firebase Android app registration, `android/app/google-services.json`, `flutterfire.json`, and `lib/firebase_options.dart` aligned for `com.friendify.app`.
+3. Set `ORG_GRADLE_PROJECT_FRIENDIFY_APP_ID=com.powerx.friendify` (or `friendify.appId=com.powerx.friendify`) for Android builds.
+4. Keep the Firebase Android app registration, `android/app/google-services.json`, `flutterfire.json`, and `lib/firebase_options.dart` aligned for `com.powerx.friendify`.
 5. Register release SHA-1/SHA-256 fingerprints for the upload/app-signing keys.
-6. In Firebase App Check, keep the Debug provider only for debug/dev workflows and enable Play Integrity for the release Android app `com.friendify.app`.
+6. In Firebase App Check, keep the Debug provider only for debug/dev workflows and enable Play Integrity for the release Android app `com.powerx.friendify`.
 7. Build a release artifact and verify the Gradle guard no longer blocks the build.
 
 Release builds must not ship with any `com.example.*` package.
@@ -148,7 +148,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\verify-release-readiness.ps1
 
 This complements the Gradle release guard by checking for stale repo config:
 
-- `android/app/google-services.json` still matches `com.friendify.app`
+- `android/app/google-services.json` still matches `com.powerx.friendify`
 - `flutterfire.json` points to the same Android app id as `android/app/google-services.json`
 - `flutterfire.json` still targets Firebase project `friendify-ef682`
 - `lib/firebase_options.dart` no longer contains regeneration markers
@@ -165,7 +165,7 @@ This complements the Gradle release guard by checking for stale repo config:
 Example signed release build with the required non-secret defines:
 
 ```powershell
-$env:ORG_GRADLE_PROJECT_FRIENDIFY_APP_ID='com.friendify.app'
+$env:ORG_GRADLE_PROJECT_FRIENDIFY_APP_ID='com.powerx.friendify'
 flutter build appbundle --release `
   --dart-define=FRIENDIFY_APP_CHECK_MODE=release `
   --dart-define=FRIENDIFY_AGORA_APP_ID=<matching-agora-app-id> `

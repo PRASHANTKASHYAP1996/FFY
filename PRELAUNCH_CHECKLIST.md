@@ -1,11 +1,11 @@
 # Friendify — Pre‑Launch Checklist
 
-> App: **Friendify — by PowerX** · package **`com.powerlabs.friendify`**
+> App: **Friendify — by PowerX** · package **`com.powerx.friendify`**
 > Firebase project **`friendify-ef682`** (`481804518660`)
 >
 > **Code state:** feature‑complete · `flutter analyze` clean · 136 tests green.
 > **Current hard blocker:** the Android build is broken until the new
-> `google-services.json` (for `com.powerlabs.friendify`) is in place — that one
+> `google-services.json` (for `com.powerx.friendify`) is in place — that one
 > step gates everything below.
 
 Legend: 🔴 blocker · 🟠 required before public launch · 🟡 recommended · ✅ done
@@ -16,7 +16,7 @@ Legend: 🔴 blocker · 🟠 required before public launch · 🟡 recommended �
 
 ### 1. 🔴 Firebase — register the new package  *(unblocks the build)*
 - [ ] Firebase Console → project `friendify-ef682` → **Add app → Android**
-- [ ] Package name: **`com.powerlabs.friendify`** (exact)
+- [ ] Package name: **`com.powerx.friendify`** (exact)
 - [ ] Add **SHA‑1 + SHA‑256** for both debug and release keystores
       *(debug SHA: `keytool -list -v -keystore %USERPROFILE%\.android\debug.keystore -alias androiddebugkey -storepass android -keypass android`)*
 - [ ] **App Check** → register the new app with **Play Integrity**; add a **debug token** for your dev device
@@ -65,7 +65,7 @@ Install the debug build on a real phone, sign in, and verify:
 ```bash
 flutter build appbundle --release
 ```
-- [ ] AAB builds; verify package id = `com.powerlabs.friendify`
+- [ ] AAB builds; verify package id = `com.powerx.friendify`
 
 ### 8. 🟠 Google Play Console
 - [ ] Create app listing (title, short/full description, **Friendify — by PowerX**)
@@ -90,6 +90,6 @@ flutter build appbundle --release
 
 ## C. Notes
 - Nothing here changes package IDs or technical identifiers beyond the approved
-  `com.powerlabs.friendify` rename. Friendify stays an independent product.
+  `com.powerx.friendify` rename. Friendify stays an independent product.
 - The **only** thing blocking a green build right now is step 1's
   `google-services.json`. Everything else can proceed once that's in.

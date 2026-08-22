@@ -1,4 +1,4 @@
-package com.powerlabs.friendify
+package com.powerx.friendify
 
 import android.content.Context
 import android.content.Intent
