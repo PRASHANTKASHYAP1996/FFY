@@ -21,7 +21,8 @@ void main() {
     });
 
     test('reads the listener counter when I am not the speaker', () {
-      final s = _session(speakerId: 'other', speakerUnread: 3, listenerUnread: 9);
+      final s =
+          _session(speakerId: 'other', speakerUnread: 3, listenerUnread: 9);
       expect(ChatUnread.unreadFor(s, 'me'), 9);
     });
 
@@ -50,8 +51,10 @@ void main() {
       final sessions = <Map<String, dynamic>>[
         _session(speakerId: 'me', speakerUnread: 1), // mine, unread -> count
         _session(speakerId: 'me', speakerUnread: 0), // mine, read -> skip
-        _session(speakerId: 'other', listenerUnread: 4), // I'm listener -> count
-        _session(speakerId: 'other', speakerUnread: 7), // their unread, not mine
+        _session(
+            speakerId: 'other', listenerUnread: 4), // I'm listener -> count
+        _session(
+            speakerId: 'other', speakerUnread: 7), // their unread, not mine
       ];
       expect(ChatUnread.conversationsWithUnread(sessions, 'me'), 2);
     });
@@ -92,7 +95,8 @@ void main() {
       };
       expect(ChatUnread.unreadFor(session, 'speaker_z'), 2);
       expect(
-        ChatUnread.conversationsWithUnread(<Map<String, dynamic>>[session], 'speaker_z'),
+        ChatUnread.conversationsWithUnread(
+            <Map<String, dynamic>>[session], 'speaker_z'),
         1,
       );
     });

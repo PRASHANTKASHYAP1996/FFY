@@ -139,15 +139,63 @@ if (isReleaseBuildRequested && keystoreProperties.isEmpty) {
     )
 }
 
+// Release signing must use a real, complete upload keystore. These checks stop a
+// release build from silently falling back to debug signing, or from a partly
+// filled key.properties producing an artifact that merely looks uploadable.
+fun resolveKeystoreFile(rawPath: String): File {
+    val appLocal = project.file(rawPath)
+    return if (appLocal.exists()) appLocal else rootProject.file(rawPath)
+}
+
+val releaseSigningProblems = mutableListOf<String>()
+if (!keystoreProperties.isEmpty) {
+    listOf("storeFile", "storePassword", "keyAlias", "keyPassword").forEach { key ->
+        if (keystoreProperties.getProperty(key).isNullOrBlank()) {
+            releaseSigningProblems.add("android/key.properties has no value for '$key'.")
+        }
+    }
+
+    val rawStorePath = keystoreProperties.getProperty("storeFile")
+    if (!rawStorePath.isNullOrBlank()) {
+        val storeFileCandidate = resolveKeystoreFile(rawStorePath)
+        val normalizedPath = storeFileCandidate.path.replace('\\', '/')
+        if (!storeFileCandidate.exists()) {
+            releaseSigningProblems.add("Keystore file '$rawStorePath' was not found.")
+        }
+        if (
+            storeFileCandidate.name.equals("debug.keystore", ignoreCase = true) ||
+            normalizedPath.contains("/.android/debug.keystore")
+        ) {
+            releaseSigningProblems.add(
+                "Release signing points at the Android debug keystore; use the PowerX upload keystore."
+            )
+        }
+    }
+
+    if (keystoreProperties.getProperty("keyAlias")?.trim()
+            .equals("androiddebugkey", ignoreCase = true)
+    ) {
+        releaseSigningProblems.add("Release signing uses the debug key alias 'androiddebugkey'.")
+    }
+}
+
+if (isReleaseBuildRequested && releaseSigningProblems.isNotEmpty()) {
+    throw GradleException(
+        "Release build blocked (signing): " + releaseSigningProblems.joinToString(" ")
+    )
+}
+
 android {
     namespace = appId
-    compileSdk = flutter.compileSdkVersion
+    // Pinned to API 36 (Android 16) instead of inheriting flutter.compileSdkVersion,
+    // so a Flutter SDK upgrade cannot silently shift the release target.
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     defaultConfig {
         applicationId = appId
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         if (!isReleaseBuildRequested) {
@@ -166,6 +214,10 @@ android {
 
     packaging {
         jniLibs {
+            // Android 15+/16 KB page-size devices need uncompressed, page-aligned
+            // .so entries. This is the AGP 8 default for minSdk >= 23; pinned so it
+            // cannot regress silently.
+            useLegacyPackaging = false
             if (!isReleaseBuildRequested) {
                 excludes += setOf(
                     "lib/x86/**",

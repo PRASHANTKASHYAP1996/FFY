@@ -21,8 +21,6 @@ class PeopleMatch {
     return ((intersection / union) * 100).round();
   }
 
-  static Set<String> _norm(List<String> xs) => xs
-      .map((s) => s.trim().toLowerCase())
-      .where((s) => s.isNotEmpty)
-      .toSet();
+  static Set<String> _norm(List<String> xs) =>
+      xs.map((s) => s.trim().toLowerCase()).where((s) => s.isNotEmpty).toSet();
 }

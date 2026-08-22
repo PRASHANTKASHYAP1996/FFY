@@ -2,7 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:friendify/shared/people_match.dart';
 
-int match(List<String> myT, List<String> myL, List<String> tT, List<String> tL) =>
+int match(
+        List<String> myT, List<String> myL, List<String> tT, List<String> tL) =>
     PeopleMatch.percent(
       myTopics: myT,
       myLanguages: myL,

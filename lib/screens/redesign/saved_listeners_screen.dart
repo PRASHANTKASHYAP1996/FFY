@@ -76,7 +76,8 @@ class _SavedListenersScreenState extends State<SavedListenersScreen> {
       body: StreamBuilder<AppUserModel?>(
         stream: _me,
         builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+          if (snap.connectionState == ConnectionState.waiting &&
+              !snap.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
           final saved = (snap.data?.favoriteListeners ?? const <String>[])

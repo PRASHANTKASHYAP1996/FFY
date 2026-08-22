@@ -19,8 +19,11 @@ void main() {
   });
 
   test('a future timestamp also reads "now"', () {
-    expect(RelativeTime.format(now.add(const Duration(hours: 1)).millisecondsSinceEpoch,
-        now: now), 'now');
+    expect(
+        RelativeTime.format(
+            now.add(const Duration(hours: 1)).millisecondsSinceEpoch,
+            now: now),
+        'now');
   });
 
   test('minutes', () {

@@ -1,5 +1,35 @@
 # Friendify — Pre‑Launch Checklist
 
+> ## ⛔ NOT PRODUCTION‑READY
+>
+> Friendify **must not be published, uploaded to Play, or treated as
+> release‑ready** in its current state. The items below are unresolved.
+
+### Release status — as of the PowerX publishing‑prep pass
+
+| Area | State |
+|---|---|
+| Android package id | ✅ `com.powerx.friendify` (applicationId, namespace, Kotlin sources) |
+| compileSdk / targetSdk | ✅ Pinned to **API 36** (Android 16) |
+| Release signing safeguards | ✅ Debug keystore / debug alias / incomplete `key.properties` all rejected |
+| Native lib packaging | ✅ `useLegacyPackaging = false` pinned |
+| Dart format / analyze / tests | ✅ Clean · clean · 136/136 |
+| **Firebase configuration** | ❌ **Still targets `com.friendify.app`** |
+| **Release AAB build** | ❌ **Blocked** — cannot be produced |
+| **Final 16 KB alignment verification** | ❌ **Blocked** — debug‑APK only so far |
+
+**Firebase (blocking).** `android/app/google-services.json` still registers the
+legacy package **`com.friendify.app`**, and `lib/firebase_options.dart` +
+`flutterfire.json` still carry that app's id. These must be replaced with a
+**PowerX‑owned** Firebase Android client for **`com.powerx.friendify`**
+(not personal‑Gmail owned). No credentials were invented or modified.
+
+**Blocked verifications.** Until that config arrives:
+- the **release AAB cannot be built**, so release signing is unproven end‑to‑end;
+- **16 KB alignment is only confirmed on a debug APK** (32/32 `.so` ZIP‑aligned,
+  41/41 ELF `p_align` ≥ 16384). Re‑confirm on the first real release AAB.
+
+
 > App: **Friendify — by PowerX** · package **`com.powerx.friendify`**
 > Firebase project **`friendify-ef682`** (`481804518660`)
 >

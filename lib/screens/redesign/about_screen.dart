@@ -40,8 +40,7 @@ class AboutScreen extends StatelessWidget {
             const SizedBox(height: 16),
             _infoCard(
               title: 'What Friendify is',
-              body:
-                  'Friendify connects you with real people for private, paid '
+              body: 'Friendify connects you with real people for private, paid '
                   'voice calls and chat when you want someone to talk to. It is '
                   'emotional support and companionship — not professional '
                   'therapy, medical, or crisis care.',
