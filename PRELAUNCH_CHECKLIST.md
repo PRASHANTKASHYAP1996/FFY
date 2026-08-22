@@ -21,6 +21,9 @@ Legend: 🔴 blocker · 🟠 required before public launch · 🟡 recommended �
       *(debug SHA: `keytool -list -v -keystore %USERPROFILE%\.android\debug.keystore -alias androiddebugkey -storepass android -keypass android`)*
 - [ ] **App Check** → register the new app with **Play Integrity**; add a **debug token** for your dev device
 - [ ] Download the new **`google-services.json`** → replace `android/app/google-services.json`
+- [ ] Regenerate the Dart/FlutterFire config (they still hold the OLD app id):
+      `flutterfire configure --project=friendify-ef682 --platforms=android`
+      -> rewrites `lib/firebase_options.dart` + `flutterfire.json`
 - [ ] *(Leave the old `com.friendify.app` app in Firebase — harmless; remove later)*
 
 ### 2. 🔴 Verify the build comes back
@@ -41,7 +44,7 @@ firebase deploy --only functions,firestore:rules
 ```bash
 git push origin main
 ```
-- [ ] ~78 commits pushed *(needs GitHub login: `gh auth login` or a PAT)*
+- [ ] Commits pushed *(needs GitHub login: `gh auth login` or a PAT)*
 
 ### 5. 🔴 Real‑device QA — calls + payments  *(most important)*
 Install the debug build on a real phone, sign in, and verify:
@@ -85,7 +88,6 @@ flutter build appbundle --release
 ## B. What Claude can still do on the code side (just ask)
 - Verify the rename after step 1–2 (package id in artifact, config checks).
 - Add **crash reporting** (Crashlytics) wiring.
-- Add a **dedicated About screen** (version + PowerX + links).
 - Any UI/logic fixes surfaced by device QA in step 5.
 
 ## C. Notes
