@@ -29,5 +29,24 @@
       "**/.*",
       "**/node_modules/**"
     ]
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "friendify-ef682",
+          "appId": "1:481804518660:android:acbf65cfca2ae32f99fc51",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "friendify-ef682",
+          "configurations": {
+            "android": "1:481804518660:android:acbf65cfca2ae32f99fc51"
+          }
+        }
+      }
+    }
   }
 }

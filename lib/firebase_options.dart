@@ -54,7 +54,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyB3V8hhSI9lNNraAX_SvUkQF-cLaRRZFuc',
-    appId: '1:481804518660:android:75aebf0ed8f7d24799fc51',
+    appId: '1:481804518660:android:acbf65cfca2ae32f99fc51',
     messagingSenderId: '481804518660',
     projectId: 'friendify-ef682',
     storageBucket: 'friendify-ef682.firebasestorage.app',
