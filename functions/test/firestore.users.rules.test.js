@@ -397,3 +397,204 @@ test("public users remain client read-only", async () => {
     displayName: "Client create blocked",
   }));
 });
+
+
+// ---------- public review mirror (public_users/{uid}/reviews/{reviewId}) ----------
+// The mirror is written only by aggregateReviewToUser_v2 with an anonymous
+// schema (stars, comment, createdAt, createdAtMs). It must be world-readable
+// and completely client-write-denied.
+
+const PUBLIC_REVIEW = {
+  stars: 5,
+  comment: "Kind and easy to talk to.",
+  createdAtMs: 1770000000000,
+};
+
+async function seedPublicReview(uid, reviewId = "review_1", data = PUBLIC_REVIEW) {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await context
+      .firestore()
+      .collection("public_users")
+      .doc(uid)
+      .collection("reviews")
+      .doc(reviewId)
+      .set(data);
+  });
+}
+
+test("public review mirror is readable by unauthenticated clients", async () => {
+  const uid = "reviewed_listener";
+  await seedPublicUser(uid);
+  await seedPublicReview(uid);
+
+  const db = testEnv.unauthenticatedContext().firestore();
+  await assertSucceeds(
+    db.collection("public_users").doc(uid).collection("reviews").doc("review_1").get()
+  );
+});
+
+test("public review mirror is listable by unauthenticated clients", async () => {
+  const uid = "reviewed_listener_list";
+  await seedPublicUser(uid);
+  await seedPublicReview(uid, "review_1");
+  await seedPublicReview(uid, "review_2");
+
+  const db = testEnv.unauthenticatedContext().firestore();
+  await assertSucceeds(
+    db.collection("public_users").doc(uid).collection("reviews").get()
+  );
+  await assertSucceeds(
+    db
+      .collection("public_users")
+      .doc(uid)
+      .collection("reviews")
+      .orderBy("createdAtMs", "desc")
+      .limit(20)
+      .get()
+  );
+});
+
+test("public review mirror is readable and listable by authenticated clients", async () => {
+  const uid = "reviewed_listener_auth";
+  await seedPublicUser(uid);
+  await seedPublicReview(uid);
+
+  const db = testEnv.authenticatedContext("some_other_user").firestore();
+  await assertSucceeds(
+    db.collection("public_users").doc(uid).collection("reviews").doc("review_1").get()
+  );
+  await assertSucceeds(
+    db.collection("public_users").doc(uid).collection("reviews").get()
+  );
+});
+
+test("public review mirror rejects client creates from every role", async () => {
+  const uid = "reviewed_listener_create";
+  await seedPublicUser(uid);
+
+  const payload = { stars: 5, comment: "forged", createdAtMs: 1 };
+  const contexts = [
+    ["unauthenticated", testEnv.unauthenticatedContext()],
+    ["authenticated", testEnv.authenticatedContext("random_user")],
+    ["profile owner", testEnv.authenticatedContext(uid)],
+  ];
+
+  for (const [, ctx] of contexts) {
+    await assertFails(
+      ctx
+        .firestore()
+        .collection("public_users")
+        .doc(uid)
+        .collection("reviews")
+        .doc("forged_review")
+        .set(payload)
+    );
+  }
+});
+
+test("public review mirror rejects client updates from every role", async () => {
+  const uid = "reviewed_listener_update";
+  await seedPublicUser(uid);
+  await seedPublicReview(uid);
+
+  const contexts = [
+    testEnv.unauthenticatedContext(),
+    testEnv.authenticatedContext("random_user"),
+    testEnv.authenticatedContext(uid),
+  ];
+
+  for (const ctx of contexts) {
+    await assertFails(
+      ctx
+        .firestore()
+        .collection("public_users")
+        .doc(uid)
+        .collection("reviews")
+        .doc("review_1")
+        .update({ stars: 1 })
+    );
+  }
+});
+
+test("public review mirror rejects client deletes from every role", async () => {
+  const uid = "reviewed_listener_delete";
+  await seedPublicUser(uid);
+  await seedPublicReview(uid);
+
+  const contexts = [
+    testEnv.unauthenticatedContext(),
+    testEnv.authenticatedContext("random_user"),
+    testEnv.authenticatedContext(uid),
+  ];
+
+  for (const ctx of contexts) {
+    await assertFails(
+      ctx
+        .firestore()
+        .collection("public_users")
+        .doc(uid)
+        .collection("reviews")
+        .doc("review_1")
+        .delete()
+    );
+  }
+});
+
+test("parent public_users doc keeps public read and denies client writes", async () => {
+  const uid = "parent_public_user";
+  await seedPublicUser(uid);
+
+  const anon = testEnv.unauthenticatedContext().firestore();
+  await assertSucceeds(anon.collection("public_users").doc(uid).get());
+  await assertFails(
+    anon.collection("public_users").doc(uid).update({ displayName: "nope" })
+  );
+  await assertFails(
+    anon.collection("public_users").doc("brand_new").set({ uid: "brand_new" })
+  );
+});
+
+test("raw top-level reviews stay private despite the public mirror", async () => {
+  const reviewId = "raw_review_1";
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await context.firestore().collection("reviews").doc(reviewId).set({
+      reviewerId: "reviewer_uid",
+      reviewedUserId: "listener_uid",
+      stars: 5,
+      comment: "raw review with identity",
+      callId: "call_123",
+    });
+  });
+
+  const anon = testEnv.unauthenticatedContext().firestore();
+  await assertFails(anon.collection("reviews").doc(reviewId).get());
+
+  const stranger = testEnv.authenticatedContext("unrelated_user").firestore();
+  await assertFails(stranger.collection("reviews").doc(reviewId).get());
+});
+
+test("money, call and chat rules remain closed to clients", async () => {
+  const uid = "unaffected_rules_user";
+  const anon = testEnv.unauthenticatedContext().firestore();
+  const user = testEnv.authenticatedContext(uid).firestore();
+
+  await assertFails(anon.collection("wallet_transactions").doc("wt1").get());
+  await assertFails(
+    user.collection("wallet_transactions").doc("wt1").set({ userId: uid, amount: 1 })
+  );
+  await assertFails(
+    user.collection("payment_orders").doc("po1").set({ userId: uid, amount: 1 })
+  );
+  await assertFails(
+    user.collection("withdrawal_requests").doc("wr1").set({ userId: uid, amount: 1 })
+  );
+  await assertFails(user.collection("wallet_locks").doc("wl1").get());
+  await assertFails(user.collection("admin_logs").doc("al1").get());
+  await assertFails(user.collection("calls").doc("c1").set({ callerId: uid }));
+  await assertFails(
+    user.collection("chat_sessions").doc("cs1").set({ speakerId: uid })
+  );
+  await assertFails(
+    user.collection("users").doc(uid).collection("notifications").doc("n1").set({ seen: true })
+  );
+});
