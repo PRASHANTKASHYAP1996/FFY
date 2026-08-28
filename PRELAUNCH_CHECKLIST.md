@@ -20,7 +20,7 @@
 | Sensitive permissions | ✅ `CAMERA`, `NFC`, `FOREGROUND_SERVICE_MEDIA_PROJECTION` removed; Agora screen‑sharing service removed; legacy `BLUETOOTH` capped at `maxSdkVersion="30"` |
 | Dart format / analyze / tests | ✅ Clean · clean · 136/136 |
 | Backend lint / check / tests | ✅ Pass · pass · **156/156** (113 behavioral + 43 Firestore‑rules) |
-| Git sync | ✅ `main` and `origin/main` synchronized at `7e671a5` |
+| Git sync | ⚠️ Verify `main` and `origin/main` are synchronized immediately before release (`git fetch origin && git rev-list --left-right --count origin/main...main` must report `0	0`) |
 
 **Verified deployed backend state**
 
@@ -93,7 +93,10 @@ flutter build appbundle --release
       keys are configured, otherwise the guard will (correctly) block them
 
 ### 4. ✅ Push the code  *(done)*
-- [x] `main` and `origin/main` synchronized at `7e671a5`
+- [ ] Verify `main` and `origin/main` are synchronized immediately before
+      release — do not rely on a previously recorded commit id:
+      `git fetch origin && git rev-list --left-right --count origin/main...main`
+      must report `0	0`
 
 ### 5. 🔴 Real‑device QA — calls + payments  *(most important)*
 Install the debug build on a real phone, sign in, and verify:
@@ -145,6 +148,6 @@ Install the debug build on a real phone, sign in, and verify:
   `com.powerx.friendify` rename. Friendify stays an independent product.
 - The build and backend are green. What remains is **operational**: live payment
   credentials, Play App Signing, Play Console submission, and device QA.
-- ⚠️ `docs/PHASE5_RELEASE_GATE.md` and `QA_CHECKLIST.md` still name the old
-  `com.friendify.app` package as final. They are stale relative to this
-  checklist; treat this file and `README.md` as authoritative for package id.
+- Package identity across all active release docs: **`com.powerx.friendify`** is
+  the current production package. **`com.friendify.app`** now appears only as the
+  intentionally retained **legacy Firebase client** kept for rollback.
