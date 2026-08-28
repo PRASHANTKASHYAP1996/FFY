@@ -12,7 +12,14 @@ const {
   _sanitizePayoutAccountSnapshot,
   _validateRazorpayPaymentRecord,
 } = require("../src/payments");
-const { safeLogFields } = require("../src/shared");
+const {
+  safeLogFields,
+  assertRazorpayProductionCredentials,
+  evaluateRazorpayCredentials,
+  classifyRazorpayKeyId,
+  isNonProductionPaymentEnvironment,
+  resolveRuntimeProjectId,
+} = require("../src/shared");
 
 function withEnv(patch, fn) {
   const previous = {};
@@ -319,4 +326,233 @@ test("Razorpay order response includes server key id and gateway order ids", () 
       productionReady: false,
     },
   );
+});
+
+
+// ---------- production Razorpay credential guard ----------
+
+const PROD = "friendify-ef682";
+const LIVE = "rzp_live_EXAMPLEONLY";
+const TEST = "rzp_test_EXAMPLEONLY";
+
+function assertPaymentConfigRejected(fn) {
+  assert.throws(fn, (err) => {
+    assert.equal(err.code, "failed-precondition");
+    assert.equal(err.message, "payment_configuration_invalid");
+    return true;
+  });
+}
+
+test("production project rejects a missing Razorpay key id", () => {
+  assertPaymentConfigRejected(() =>
+    assertRazorpayProductionCredentials({
+      keyId: "",
+      keySecret: "secret-placeholder",
+      projectId: PROD,
+      emulator: false,
+    })
+  );
+});
+
+test("production project rejects a test-mode Razorpay key", () => {
+  assertPaymentConfigRejected(() =>
+    assertRazorpayProductionCredentials({
+      keyId: TEST,
+      keySecret: "secret-placeholder",
+      projectId: PROD,
+      emulator: false,
+    })
+  );
+});
+
+test("production project rejects an unrecognised Razorpay key prefix", () => {
+  assertPaymentConfigRejected(() =>
+    assertRazorpayProductionCredentials({
+      keyId: "sk_live_wrongvendor",
+      keySecret: "secret-placeholder",
+      projectId: PROD,
+      emulator: false,
+    })
+  );
+});
+
+test("production project rejects a live key with a blank secret", () => {
+  for (const secret of ["", "   "]) {
+    assertPaymentConfigRejected(() =>
+      assertRazorpayProductionCredentials({
+        keyId: LIVE,
+        keySecret: secret,
+        projectId: PROD,
+        emulator: false,
+      })
+    );
+  }
+});
+
+test("production project accepts a live key with a non-blank secret", () => {
+  assert.doesNotThrow(() =>
+    assertRazorpayProductionCredentials({
+      keyId: LIVE,
+      keySecret: "secret-placeholder",
+      projectId: PROD,
+      emulator: false,
+    })
+  );
+});
+
+test("functions emulator still accepts a test key", () => {
+  assert.doesNotThrow(() =>
+    assertRazorpayProductionCredentials({
+      keyId: TEST,
+      keySecret: "secret-placeholder",
+      projectId: PROD,
+      emulator: true,
+    })
+  );
+});
+
+test("clearly named dev or test projects still accept a test key", () => {
+  for (const projectId of ["friendify-dev", "friendify-test", "my-emulator-proj"]) {
+    assert.doesNotThrow(() =>
+      assertRazorpayProductionCredentials({
+        keyId: TEST,
+        keySecret: "secret-placeholder",
+        projectId,
+        emulator: false,
+      })
+    );
+  }
+});
+
+test("unknown non-emulator projects are treated as production and reject test keys", () => {
+  for (const projectId of ["", "some-unlabelled-project"]) {
+    assertPaymentConfigRejected(() =>
+      assertRazorpayProductionCredentials({
+        keyId: TEST,
+        keySecret: "secret-placeholder",
+        projectId,
+        emulator: false,
+      })
+    );
+  }
+});
+
+test("credential guard never exposes key or secret values", () => {
+  const secret = "super-secret-value-should-never-appear";
+  const keyId = "rzp_test_SHOULDNEVERAPPEAR";
+  let captured = null;
+  try {
+    assertRazorpayProductionCredentials({
+      keyId,
+      keySecret: secret,
+      projectId: PROD,
+      emulator: false,
+    });
+  } catch (err) {
+    captured = err;
+  }
+  assert.ok(captured, "guard must reject");
+  const serialised = JSON.stringify({
+    message: captured.message,
+    details: captured.details,
+    code: captured.code,
+  });
+  assert.ok(!serialised.includes(secret), "secret must not leak");
+  assert.ok(!serialised.includes(keyId), "key id must not leak");
+  assert.ok(!serialised.includes("SHOULDNEVERAPPEAR"), "key fragment must not leak");
+  assert.equal(captured.details.reason, "payment_configuration_invalid");
+});
+
+test("key classification is coarse and value-free", () => {
+  assert.equal(classifyRazorpayKeyId(LIVE), "live");
+  assert.equal(classifyRazorpayKeyId(TEST), "test");
+  assert.equal(classifyRazorpayKeyId(""), "missing");
+  assert.equal(classifyRazorpayKeyId("nonsense"), "invalid");
+  const evaluated = evaluateRazorpayCredentials({
+    keyId: TEST,
+    keySecret: "secret-placeholder",
+    projectId: PROD,
+    emulator: false,
+  });
+  assert.equal(evaluated.ok, false);
+  assert.equal(evaluated.keyClass, "test");
+  assert.ok(!JSON.stringify(evaluated).includes("EXAMPLEONLY"));
+});
+
+test("environment classification uses trusted runtime signals only", () => {
+  withEnv(
+    {
+      GCLOUD_PROJECT: undefined,
+      GCP_PROJECT: undefined,
+      FUNCTIONS_EMULATOR: undefined,
+      FIREBASE_CONFIG: JSON.stringify({ projectId: "friendify-dev" }),
+    },
+    () => {
+      assert.equal(resolveRuntimeProjectId(), "friendify-dev");
+      assert.equal(isNonProductionPaymentEnvironment(), true);
+    }
+  );
+
+  withEnv(
+    {
+      GCLOUD_PROJECT: undefined,
+      GCP_PROJECT: undefined,
+      FUNCTIONS_EMULATOR: undefined,
+      FIREBASE_CONFIG: "{not-json",
+    },
+    () => {
+      assert.equal(resolveRuntimeProjectId(), "");
+      assert.equal(isNonProductionPaymentEnvironment(), false);
+    }
+  );
+
+  withEnv(
+    {
+      GCLOUD_PROJECT: PROD,
+      GCP_PROJECT: undefined,
+      FUNCTIONS_EMULATOR: undefined,
+      FIREBASE_CONFIG: undefined,
+    },
+    () => {
+      assert.equal(resolveRuntimeProjectId(), PROD);
+      assert.equal(isNonProductionPaymentEnvironment(), false);
+    }
+  );
+});
+
+test("both Razorpay callables invoke the guard before gateway or mutation", () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, "..", "src", "payments.js"),
+    "utf8"
+  );
+  for (const fnName of ["createRazorpayOrder_v1", "verifyRazorpayPayment_v1"]) {
+    const start = source.indexOf(`assertCallableAppCheck(context, "${fnName}")`);
+    assert.ok(start > -1, `${fnName} must exist`);
+    const guardAt = source.indexOf("assertRazorpayProductionCredentials()", start);
+    assert.ok(guardAt > -1, `${fnName} must call the credential guard`);
+
+    for (const sideEffect of [
+      "getRazorpayClient()",
+      "razorpay.orders.create",
+      "razorpay.payments.fetch",
+      "createHmac",
+      "runTransaction",
+    ]) {
+      const at = source.indexOf(sideEffect, start);
+      if (at > -1) {
+        assert.ok(
+          guardAt < at,
+          `${fnName}: guard must run before ${sideEffect}`
+        );
+      }
+    }
+  }
+});
+
+test("non-payment callables do not invoke the payment credential guard", () => {
+  const social = fs.readFileSync(
+    path.join(__dirname, "..", "src", "social.js"),
+    "utf8"
+  );
+  assert.ok(!social.includes("assertRazorpayProductionCredentials"));
 });

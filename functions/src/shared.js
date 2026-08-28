@@ -511,6 +511,114 @@ function getRazorpayConfig() {
   return { keyId: envKeyId, keySecret: envKeySecret };
 }
 
+// ---------- PRODUCTION PAYMENT CREDENTIAL GUARD ----------
+// Razorpay must never run against missing, test-mode or malformed credentials in
+// a production environment. Classification is deliberately conservative: an
+// environment counts as non-production ONLY when it is the Functions emulator or
+// the project id clearly names itself dev/test/emulator. Anything else -
+// including an unrecognised or unresolvable project - is treated as production
+// and must therefore carry live credentials.
+function resolveRuntimeProjectId() {
+  const direct = strOr(
+    process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT
+  ).trim();
+  if (direct) return direct;
+
+  const rawConfig = strOr(process.env.FIREBASE_CONFIG).trim();
+  if (rawConfig) {
+    try {
+      const parsed = JSON.parse(rawConfig);
+      const fromConfig = strOr(parsed && parsed.projectId).trim();
+      if (fromConfig) return fromConfig;
+    } catch (_) {
+      // An unparseable FIREBASE_CONFIG is untrusted; fall through to "unknown",
+      // which is classified as production (fail closed).
+    }
+  }
+  return "";
+}
+
+function isNonProductionPaymentEnvironment({ projectId, emulator } = {}) {
+  const inEmulator = typeof emulator === "boolean"
+    ? emulator
+    : process.env.FUNCTIONS_EMULATOR === "true";
+  if (inEmulator) return true;
+
+  const resolved = strOr(
+    projectId === undefined ? resolveRuntimeProjectId() : projectId
+  )
+    .trim()
+    .toLowerCase();
+  if (!resolved) return false;
+
+  return (
+    resolved.includes("dev") ||
+    resolved.includes("test") ||
+    resolved.includes("emulator")
+  );
+}
+
+// Returns a coarse classification only. Never returns or logs the key itself.
+function classifyRazorpayKeyId(keyId) {
+  const value = strOr(keyId).trim();
+  if (!value) return "missing";
+  if (value.startsWith("rzp_live_")) return "live";
+  if (value.startsWith("rzp_test_")) return "test";
+  return "invalid";
+}
+
+function evaluateRazorpayCredentials({
+  keyId,
+  keySecret,
+  projectId,
+  emulator,
+} = {}) {
+  const resolvedKeyId =
+    keyId === undefined ? strOr(process.env.RAZORPAY_KEY_ID) : strOr(keyId);
+  const resolvedSecret =
+    keySecret === undefined
+      ? strOr(process.env.RAZORPAY_KEY_SECRET)
+      : strOr(keySecret);
+
+  const keyClass = classifyRazorpayKeyId(resolvedKeyId);
+  const secretPresent = resolvedSecret.trim().length > 0;
+  const nonProduction = isNonProductionPaymentEnvironment({
+    projectId,
+    emulator,
+  });
+
+  // Non-production keeps existing emulator/test-key behaviour untouched; the
+  // pre-existing missing-key check in getRazorpayClient still applies there.
+  if (nonProduction) {
+    return { ok: true, mode: "non-production", keyClass, secretPresent };
+  }
+
+  return {
+    ok: keyClass === "live" && secretPresent,
+    mode: "production",
+    keyClass,
+    secretPresent,
+  };
+}
+
+function assertRazorpayProductionCredentials(options = {}) {
+  const result = evaluateRazorpayCredentials(options);
+  if (result.ok) return result;
+
+  // Coarse classification only - never the key, prefix beyond live/test, or secret.
+  logEvent("payment.config.invalid", {
+    mode: result.mode,
+    keyClass: result.keyClass,
+    secretPresent: result.secretPresent,
+  });
+
+  throw new functions.https.HttpsError(
+    "failed-precondition",
+    "payment_configuration_invalid",
+    { reason: "payment_configuration_invalid" }
+  );
+}
+
 function getRazorpayClient() {
   const { keyId, keySecret } = getRazorpayConfig();
 
@@ -520,6 +628,9 @@ function getRazorpayClient() {
       "Razorpay keys are not configured on the server."
     );
   }
+
+  // Defence in depth: any future caller of this factory is guarded too.
+  assertRazorpayProductionCredentials({ keyId, keySecret });
 
   return new Razorpay({
     key_id: keyId,
@@ -1032,6 +1143,11 @@ module.exports = {
   assertAgoraTokenConfigReady,
   getRazorpayConfig,
   getRazorpayClient,
+  assertRazorpayProductionCredentials,
+  evaluateRazorpayCredentials,
+  classifyRazorpayKeyId,
+  isNonProductionPaymentEnvironment,
+  resolveRuntimeProjectId,
   buildAgoraTokenIfPossible,
   buildAgoraTokenOrThrow,
   isPlaceholderSecret,

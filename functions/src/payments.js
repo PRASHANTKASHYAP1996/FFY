@@ -14,6 +14,7 @@
   safeCurrency,
   getRazorpayClient,
   getRazorpayConfig,
+  assertRazorpayProductionCredentials,
   crypto,
   walletTxRef,
   buildTopupTxId,
@@ -769,6 +770,9 @@ exports.createRazorpayOrder_v1 = functions
   }
 
   const userId = context.auth.uid;
+
+  // Fail closed before any Razorpay call or order record is created.
+  assertRazorpayProductionCredentials();
   const amount = intOr(data && data.amount, 0);
   const currency = safeCurrency(data && data.currency);
   const metadata = sanitizeClientMetadata(data && data.metadata);
@@ -882,6 +886,9 @@ exports.verifyRazorpayPayment_v1 = functions
   }
 
   const userId = context.auth.uid;
+
+  // Fail closed before signature verification, gateway calls or wallet mutation.
+  assertRazorpayProductionCredentials();
   const orderId = strOr(data && data.orderId).trim();
   const razorpayOrderId = strOr(data && data.razorpayOrderId).trim();
   const paymentId = strOr(data && data.paymentId).trim();
