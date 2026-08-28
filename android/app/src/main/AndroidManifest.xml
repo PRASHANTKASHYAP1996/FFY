@@ -17,6 +17,34 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
 
+    <!--
+      Dependency-only permissions that no Friendify feature uses. Removed from the
+      merged manifest so the app does not request sensitive access it never
+      exercises, and does not inherit Play declarations it cannot justify.
+        CAMERA  - agora_rtc_engine + image_picker. Friendify is audio-only
+                  (no enableVideo/setupLocalVideo) and both image pickers use
+                  ImageSource.gallery.
+        NFC     - Razorpay standard-core. No NFC code anywhere in lib/.
+        FOREGROUND_SERVICE_MEDIA_PROJECTION - Agora full-screen-sharing AAR.
+                  Friendify never calls startScreenCapture.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" tools:node="remove" />
+    <uses-permission android:name="android.permission.NFC" tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"
+        tools:node="remove" />
+
+    <!--
+      Legacy Bluetooth permission comes from agora_rtc_engine without a cap.
+      It is only meaningful up to API 30; BLUETOOTH_CONNECT covers API 31+ and is
+      intentionally left untouched. tools:node="replace" is required because the
+      library declaration carries no maxSdkVersion.
+    -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30"
+        tools:node="replace" />
+
     <application
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
@@ -72,6 +100,12 @@
 
         <service
             android:name="io.flutter.plugins.firebase.messaging.FlutterFirebaseMessagingService"
+            tools:node="remove" />
+
+        <!-- Agora screen-sharing service. Friendify has no screen-share feature;
+             removing it also clears the orphan mediaProjection FGS type. -->
+        <service
+            android:name="io.agora.rtc2.extensions.MediaProjectionMgr$LocalScreenSharingService"
             tools:node="remove" />
 
         <!-- Required by flutter_foreground_task -->
