@@ -5,38 +5,58 @@
 > Friendify **must not be published, uploaded to Play, or treated as
 > release‑ready** in its current state. The items below are unresolved.
 
-### Release status — as of the PowerX publishing‑prep pass
+### Release status — verified
+
+**Verified code / build state**
 
 | Area | State |
 |---|---|
-| Android package id | ✅ `com.powerx.friendify` (applicationId, namespace, Kotlin sources) |
+| Android package id | ✅ `com.powerx.friendify` (applicationId, namespace, Kotlin sources, release artifact) |
 | compileSdk / targetSdk | ✅ Pinned to **API 36** (Android 16) |
 | Release signing safeguards | ✅ Debug keystore / debug alias / incomplete `key.properties` all rejected |
 | Native lib packaging | ✅ `useLegacyPackaging = false` pinned |
+| Release AAB build | ✅ Builds successfully; artifact package id confirmed `com.powerx.friendify` |
+| 16 KB page alignment | ✅ 64‑bit ABIs pass on the **release AAB** (arm64‑v8a 32/32, x86_64 32/32). armeabi‑v7a is 32‑bit and out of scope |
+| Sensitive permissions | ✅ `CAMERA`, `NFC`, `FOREGROUND_SERVICE_MEDIA_PROJECTION` removed; Agora screen‑sharing service removed; legacy `BLUETOOTH` capped at `maxSdkVersion="30"` |
 | Dart format / analyze / tests | ✅ Clean · clean · 136/136 |
-| **Firebase configuration** | ❌ **Still targets `com.friendify.app`** |
-| **Release AAB build** | ❌ **Blocked** — cannot be produced |
-| **Final 16 KB alignment verification** | ❌ **Blocked** — debug‑APK only so far |
+| Backend lint / check / tests | ✅ Pass · pass · **156/156** (113 behavioral + 43 Firestore‑rules) |
+| Git sync | ✅ `main` and `origin/main` synchronized at `7e671a5` |
 
-**Firebase (blocking).** `android/app/google-services.json` still registers the
-legacy package **`com.friendify.app`**, and `lib/firebase_options.dart` +
-`flutterfire.json` still carry that app's id. These must be replaced with a
-**PowerX‑owned** Firebase Android client for **`com.powerx.friendify`**
-(not personal‑Gmail owned). No credentials were invented or modified.
+**Verified deployed backend state**
 
-**Blocked verifications.** Until that config arrives:
-- the **release AAB cannot be built**, so release signing is unproven end‑to‑end;
-- **16 KB alignment is only confirmed on a debug APK** (32/32 `.so` ZIP‑aligned,
-  41/41 ELF `p_align` ≥ 16384). Re‑confirm on the first real release AAB.
+| Area | State |
+|---|---|
+| Firebase Android client | ✅ Registered for `com.powerx.friendify` in `friendify-ef682` |
+| Firebase config sources | ✅ `google-services.json`, `firebase_options.dart`, `firebase.json`, `flutterfire.json` all agree |
+| SHA fingerprints | ✅ Debug + **upload‑key** SHA‑1/SHA‑256 registered on the new client |
+| Cloud Functions | ✅ Local/deployed match **69/69** |
+| Firestore rules | ✅ Deployed rules match local exactly |
+| Firestore indexes | ✅ **27/27 READY**, matching local |
+| Public review reads | ✅ Listener‑profile reviews readable; all client writes still denied |
 
+**Still open — see section A**
+
+| Area | State |
+|---|---|
+| **Razorpay live credentials** | ❌ Not configured or verified |
+| **Production Razorpay guard** | ❌ Committed and pushed, **not deployed** to the two payment functions |
+| **Play App Signing SHA‑1/SHA‑256** | ❌ Not registered (upload‑key fingerprints do **not** substitute) |
+| **Play‑distributed App Check / Play Integrity** | ❌ Pending |
+| **Device QA** | ❌ Pending |
+| **Play Console listing / Data Safety / rating** | ❌ Pending |
+
+**Non‑blocking observations.** The stale capital‑`Calls` Firestore index is still
+present (duplicate of a lowercase `calls` index; no query targets it). Cloud
+Functions run in `us-central1` while the database is in `asia-south1` — a
+latency optimization concern, not a blocker.
 
 > App: **Friendify — by PowerX** · package **`com.powerx.friendify`**
 > Firebase project **`friendify-ef682`** (`481804518660`)
 >
-> **Code state:** feature‑complete · `flutter analyze` clean · 136 tests green.
-> **Current hard blocker:** the Android build is broken until the new
-> `google-services.json` (for `com.powerx.friendify`) is in place — that one
-> step gates everything below.
+> **Code state:** feature‑complete · `flutter analyze` clean · 136 Flutter tests
+> green · 156 backend tests green · release AAB builds.
+> **Current hard blockers:** live Razorpay credentials, Play App Signing
+> fingerprints, and real‑device QA. **Do not treat payments as working.**
 
 Legend: 🔴 blocker · 🟠 required before public launch · 🟡 recommended · ✅ done
 
@@ -44,37 +64,36 @@ Legend: 🔴 blocker · 🟠 required before public launch · 🟡 recommended �
 
 ## A. Your tasks (in order)
 
-### 1. 🔴 Firebase — register the new package  *(unblocks the build)*
-- [ ] Firebase Console → project `friendify-ef682` → **Add app → Android**
-- [ ] Package name: **`com.powerx.friendify`** (exact)
-- [ ] Add **SHA‑1 + SHA‑256** for both debug and release keystores
+### 1. ✅ Firebase — register the new package  *(done)*
+- [x] Firebase Console → project `friendify-ef682` → **Add app → Android**
+- [x] Package name: **`com.powerx.friendify`** (exact)
+- [x] Add **SHA‑1 + SHA‑256** for both debug and upload keystores
       *(debug SHA: `keytool -list -v -keystore %USERPROFILE%\.android\debug.keystore -alias androiddebugkey -storepass android -keypass android`)*
-- [ ] **App Check** → register the new app with **Play Integrity**; add a **debug token** for your dev device
-- [ ] Download the new **`google-services.json`** → replace `android/app/google-services.json`
-- [ ] Regenerate the Dart/FlutterFire config (they still hold the OLD app id):
-      `flutterfire configure --project=friendify-ef682 --platforms=android`
-      -> rewrites `lib/firebase_options.dart` + `flutterfire.json`
-- [ ] *(Leave the old `com.friendify.app` app in Firebase — harmless; remove later)*
+- [ ] 🔴 **App Check** → register the app with **Play Integrity** and add the
+      **Play App Signing** SHA‑1/SHA‑256 once Play generates them. The upload‑key
+      fingerprints already registered do **not** cover Play‑distributed installs
+- [x] Download the new **`google-services.json`** → replace `android/app/google-services.json`
+- [x] Regenerate the Dart/FlutterFire config
+      (`flutterfire configure --project=friendify-ef682 --platforms=android`)
+- [x] *(Old `com.friendify.app` client deliberately retained for rollback)*
 
-### 2. 🔴 Verify the build comes back
+### 2. ✅ Verify the build  *(done)*
 ```bash
-flutter build apk --debug
+flutter build appbundle --release
 ```
-- [ ] Builds successfully (no "No matching client…" error)
-- [ ] *(Then ping Claude to run the full rename verification: package id in the APK, auth/FCM/App Check config, no stray `com.friendify.app`.)*
+- [x] Release AAB builds successfully
+- [x] Artifact package id verified `com.powerx.friendify`; no stray `com.friendify.app`
 
-### 3. 🔴 Deploy the backend
-```bash
-firebase deploy --only functions,firestore:rules
-```
-- [ ] Answer **yes** when it asks to delete `cleanupExpiredStories_v1` (stories were removed — expected)
-- [ ] Confirms functions + rules deployed with no errors
+### 3. ✅ Deploy the backend  *(done — except the payment guard)*
+- [x] Cloud Functions deployed and reconciled: **69/69** local = deployed
+- [x] Firestore rules deployed; deployed rules match local exactly
+- [x] Firestore indexes verified **27/27 READY** (no index deployment needed)
+- [ ] 🔴 Redeploy `createRazorpayOrder_v1` + `verifyRazorpayPayment_v1` so the
+      production credential guard takes effect — **only after** live Razorpay
+      keys are configured, otherwise the guard will (correctly) block them
 
-### 4. 🟡 Push the code
-```bash
-git push origin main
-```
-- [ ] Commits pushed *(needs GitHub login: `gh auth login` or a PAT)*
+### 4. ✅ Push the code  *(done)*
+- [x] `main` and `origin/main` synchronized at `7e671a5`
 
 ### 5. 🔴 Real‑device QA — calls + payments  *(most important)*
 Install the debug build on a real phone, sign in, and verify:
@@ -94,11 +113,10 @@ Install the debug build on a real phone, sign in, and verify:
 - [ ] Confirm real top‑up + real payout on a live account (small amount)
 
 ### 7. 🟠 Release signing + AAB
-- [ ] Create `android/key.properties` (storeFile, storePassword, keyAlias, keyPassword) + release keystore
-```bash
-flutter build appbundle --release
-```
-- [ ] AAB builds; verify package id = `com.powerx.friendify`
+- [x] Local upload keystore + `android/key.properties` in place (untracked)
+- [x] AAB builds; package id verified `com.powerx.friendify`
+- [ ] 🔴 Enrol in **Play App Signing** and register Play's SHA‑1/SHA‑256 on the
+      Firebase client (required for App Check on Play builds)
 
 ### 8. 🟠 Google Play Console
 - [ ] Create app listing (title, short/full description, **Friendify — by PowerX**)
@@ -116,12 +134,17 @@ flutter build appbundle --release
 ---
 
 ## B. What Claude can still do on the code side (just ask)
-- Verify the rename after step 1–2 (package id in artifact, config checks).
 - Add **crash reporting** (Crashlytics) wiring.
+- Redeploy the two payment functions once live Razorpay keys are configured.
+- Investigate the `us-central1` / `asia-south1` cross‑region latency.
+- Remove the stale capital‑`Calls` Firestore index (non‑blocking).
 - Any UI/logic fixes surfaced by device QA in step 5.
 
 ## C. Notes
 - Nothing here changes package IDs or technical identifiers beyond the approved
   `com.powerx.friendify` rename. Friendify stays an independent product.
-- The **only** thing blocking a green build right now is step 1's
-  `google-services.json`. Everything else can proceed once that's in.
+- The build and backend are green. What remains is **operational**: live payment
+  credentials, Play App Signing, Play Console submission, and device QA.
+- ⚠️ `docs/PHASE5_RELEASE_GATE.md` and `QA_CHECKLIST.md` still name the old
+  `com.friendify.app` package as final. They are stale relative to this
+  checklist; treat this file and `README.md` as authoritative for package id.
